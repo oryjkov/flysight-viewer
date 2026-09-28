@@ -50,7 +50,10 @@ interface Loaded {
   d: Derived;
   sensor: SensorData | null;
   label: TrackLabel;
-  /** Classifier suggestion, drawn as dashed lines. */
+  /**
+   * The current classifier's suggestion, drawn as dashed lines. The label's
+   * `prefill` may be older: it records what the labeller started from.
+   */
   ghost: JumpLabel[];
   dirty: boolean;
   /** Series shared by the charts. */
@@ -153,7 +156,7 @@ async function open(index: number): Promise<void> {
     d,
     sensor: null,
     label,
-    ghost: label.prefill?.jumps ?? suggested,
+    ghost: suggested,
     dirty: false,
     s: {
       speed: { t: track.t, v: d.speed, color: COLORS.speed, axis: 'left', width: 1.5 },
@@ -344,6 +347,7 @@ function toggleSkip(): void {
 function resetToPrefill(): void {
   if (!cur || !confirm('Replace the jumps with the classifier suggestion?')) return;
   cur.label.jumps = clone(cur.ghost);
+  cur.label.prefill = { classifier: CLASSIFIER_VERSION, jumps: clone(cur.ghost) };
   activeJump = 0;
   changed();
 }
