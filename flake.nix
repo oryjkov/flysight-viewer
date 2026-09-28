@@ -17,7 +17,11 @@
         default = pkgs.mkShell {
           packages = [
             pkgs.nodejs
-            (pkgs.python3.withPackages (p: [ p.bleak ]))
+            (pkgs.python3.withPackages (p: [
+              p.bleak
+              p.numpy
+              p.matplotlib
+            ]))
             pkgs.bluez # bluetoothctl, btmon
           ];
         };
