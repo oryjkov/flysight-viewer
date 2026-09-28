@@ -100,8 +100,8 @@ async function chooseDevice(): Promise<BleLink> {
 }
 
 /**
- * Reconnect to the remembered FlySight without the chooser, waiting for it to
- * wake up. Null when there is none or the browser can't; the notice offers the
+ * Reconnect to the remembered FlySight without the chooser, waiting until it is
+ * heard advertising. Null when there is none or the browser can't; the notice offers the
  * chooser meanwhile (a chooser needs a fresh tap, so it can't just follow a
  * timeout).
  */
@@ -116,7 +116,7 @@ async function reconnectRemembered(chooseAnother: () => void): Promise<BleLink |
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error('timeout')), RECONNECT_TIMEOUT_MS);
   setStatus('connecting', `Looking for ${remembered.name}…`);
-  showNotice(`Looking for ${remembered.name}. If it's asleep, press its button.`, false, undefined, {
+  showNotice(`Looking for ${remembered.name} nearby…`, false, undefined, {
     label: 'Choose another FlySight',
     run: () => {
       controller.abort(new DOMException('Chose another', 'AbortError'));
@@ -128,7 +128,7 @@ async function reconnectRemembered(chooseAnother: () => void): Promise<BleLink |
   } catch (e) {
     if (controller.signal.reason instanceof Error && controller.signal.reason.message === 'timeout') {
       setStatus('disconnected', 'Not connected');
-      showNotice(`${remembered.name} wasn't found nearby. Wake it with its button and try again.`, false, undefined, {
+      showNotice(`${remembered.name} wasn't found nearby.`, false, undefined, {
         label: 'Choose another FlySight',
         run: chooseAnother,
       });

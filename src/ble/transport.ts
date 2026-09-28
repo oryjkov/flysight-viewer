@@ -45,8 +45,8 @@ export class BleLink implements Link {
   /**
    * Reconnect to a FlySight this site was allowed to use before, without the
    * device chooser. Returns null when the browser can't (no `getDevices`, or
-   * the permission is gone). Waits for the FlySight to advertise — it may be
-   * asleep or out of range — and rejects when `signal` aborts.
+   * the permission is gone). Waits until the FlySight is heard advertising —
+   * it may not be yet, or be out of range — and rejects when `signal` aborts.
    */
   static async reconnect(deviceId: string, signal: AbortSignal): Promise<BleLink | null> {
     if (!navigator.bluetooth.getDevices) return null;
@@ -109,7 +109,7 @@ export class BleLink implements Link {
 }
 
 /**
- * Resolve once the device is heard advertising, i.e. awake and in range.
+ * Resolve once the device is heard advertising.
  * Where the browser can't watch advertisements, resolve straight away and let
  * the connection attempt find out.
  */
