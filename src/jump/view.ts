@@ -36,6 +36,20 @@ const SPEED_STEPS = 64;
 const RAMP_MAX = 200 / 3.6;
 const PROFILE_DEFAULT = 800;
 
+/** Charts, in the order the landscape switcher shows them. */
+const CHARTS = [
+  { key: 'profile', label: 'Drop' },
+  { key: 'polar', label: 'Polar' },
+  { key: 'time', label: 'Time' },
+] as const;
+type ChartKey = (typeof CHARTS)[number]['key'];
+
+/**
+ * Phone held sideways: one chart fills the screen, controls in an overlay.
+ * Keep in sync with the chart-mode media query in style.css.
+ */
+const chartMode = matchMedia('(orientation: landscape) and (max-height: 500px)');
+
 export function jumpView(track: Track): HTMLElement {
   const d = derive(track);
   const jumps = segment(track).map((label) => analyzeJump(track, label, d));
@@ -44,6 +58,7 @@ export function jumpView(track: Track): HTMLElement {
   }
 
   const root = h('div', { class: 'jump-view' });
+  root.dataset.chart = loadChart();
   const state = {
     jump: 0,
     units: loadUnits(),
@@ -78,7 +93,36 @@ export function jumpView(track: Track): HTMLElement {
   const timeCanvas = h('canvas', { class: 'plot plot-time' });
   const timeLegend = h('span', { class: 'legend' });
   const cropInput = h('input', { type: 'checkbox', checked: true });
+  const cropLabel = h('label', { class: 'crop' }, cropInput, ' Crop at deploy');
+  const rangeLabel = h('label', { class: 'range', title: 'Height of the profile from exit' }, rangeInput, rangeValue);
   const tooltip = h('div', { class: 'jump-tooltip', hidden: true });
+
+  // Landscape overlay: files, chart switcher, and a panel with the controls.
+  const filesButton = h('button', { class: 'icon', title: 'Files', 'aria-label': 'Files' }, '☰');
+  filesButton.onclick = () => root.dispatchEvent(new CustomEvent('open-files', { bubbles: true }));
+  const chartButtons = CHARTS.map(({ key, label }) => {
+    const b = h('button', { 'aria-pressed': String(root.dataset.chart === key) }, label);
+    b.onclick = () => setChart(key);
+    return b;
+  });
+  const moreButton = h('button', { class: 'icon', title: 'Options', 'aria-label': 'Options', 'aria-expanded': 'false' }, '⋯');
+  const pillStats = h('div', { class: 'pill-stats' });
+  const pillControls = h('div', { class: 'pill-controls' });
+  const panel = h('div', { class: 'pill-panel', hidden: true }, pillStats, pillControls);
+  function setPanel(open: boolean): void {
+    panel.hidden = !open;
+    moreButton.setAttribute('aria-expanded', String(open));
+  }
+  moreButton.onclick = () => {
+    setHover(null);
+    setPanel(panel.hidden !== false);
+  };
+  const pill = h(
+    'div',
+    { class: 'chart-pill' },
+    h('div', { class: 'pill-bar' }, filesButton, h('span', { class: 'chart-switch' }, ...chartButtons), moreButton),
+    panel,
+  );
 
   root.append(
     head,
@@ -88,19 +132,13 @@ export function jumpView(track: Track): HTMLElement {
       { class: 'jump-charts' },
       h(
         'section',
-        { class: 'card' },
-        h(
-          'div',
-          { class: 'card-head' },
-          h('h4', {}, 'Drop vs distance flown'),
-          h('label', { class: 'range', title: 'Height of the profile from exit' }, rangeInput, rangeValue),
-          speedLegend,
-        ),
+        { class: 'card card-profile' },
+        h('div', { class: 'card-head' }, h('h4', {}, 'Drop vs distance flown'), rangeLabel, speedLegend),
         profileCanvas,
       ),
       h(
         'section',
-        { class: 'card' },
+        { class: 'card card-polar' },
         h(
           'div',
           { class: 'card-head' },
@@ -121,18 +159,35 @@ export function jumpView(track: Track): HTMLElement {
     ),
     h(
       'section',
-      { class: 'card' },
-      h(
-        'div',
-        { class: 'card-head' },
-        h('h4', {}, 'Time chart'),
-        timeLegend,
-        h('label', { class: 'crop' }, cropInput, ' Crop at deploy'),
-      ),
+      { class: 'card card-time' },
+      h('div', { class: 'card-head' }, h('h4', {}, 'Time chart'), timeLegend, cropLabel),
       timeCanvas,
     ),
     tooltip,
+    pill,
   );
+
+  // In landscape the controls move into the overlay's panel; they go back to
+  // their places in portrait. Comments mark where each one lives.
+  const movable = [tabs, densityButton, unitsButton, rangeLabel, speedLegend, cropLabel, timeLegend];
+  const homes = movable.map((el) => {
+    const mark = document.createComment('');
+    el.before(mark);
+    return mark;
+  });
+  function placeControls(): void {
+    if (chartMode.matches) pillControls.append(...movable);
+    else movable.forEach((el, i) => homes[i].after(el));
+  }
+  placeControls();
+  chartMode.addEventListener('change', placeControls);
+
+  function setChart(key: ChartKey): void {
+    root.dataset.chart = key;
+    saveChart(key);
+    chartButtons.forEach((b, i) => b.setAttribute('aria-pressed', String(CHARTS[i].key === key)));
+    setHover(null);
+  }
 
   const profile = new Plot(profileCanvas);
   profile.square = true;
@@ -221,6 +276,21 @@ export function jumpView(track: Track): HTMLElement {
     );
 
     const s = j.stats;
+    pillStats.replaceChildren(
+      h('b', {}, head.querySelector('.local')?.textContent ?? ''),
+      h(
+        'span',
+        {},
+        [
+          `Max ${speed(maxSpeed(), u)}${state.seaLevel ? ' (sea level)' : ''}`,
+          s.deployAgl !== null ? `deploy ${len(s.deployAgl, u)} AGL` : null,
+          s.freefallTime !== null ? `freefall ${duration(s.freefallTime)}` : null,
+          s.canopyTime !== null ? `canopy ${duration(s.canopyTime)}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      ),
+    );
     tiles.replaceChildren(
       tile('Exit', s.exitAgl !== null ? `${len(s.exitAgl, u)} AGL` : '—'),
       tile('Freefall', s.freefallTime !== null ? duration(s.freefallTime) : '—'),
@@ -408,10 +478,23 @@ export function jumpView(track: Track): HTMLElement {
     );
     tooltip.hidden = false;
     const r = tooltip.getBoundingClientRect();
-    const x = e.clientX + 16 + r.width > innerWidth ? e.clientX - 16 - r.width : e.clientX + 16;
-    const y = Math.min(e.clientY + 16, innerHeight - r.height - 8);
-    tooltip.style.left = `${x}px`;
-    tooltip.style.top = `${y}px`;
+    let x: number;
+    let y: number;
+    if (e.pointerType === 'mouse') {
+      x = e.clientX + 16 + r.width > innerWidth ? e.clientX - 16 - r.width : e.clientX + 16;
+      y = Math.min(e.clientY + 16, innerHeight - r.height - 8);
+    } else {
+      // A finger covers what's under it: dock at the top of the chart, on the
+      // side away from the finger.
+      const c = (e.target as HTMLElement).getBoundingClientRect();
+      const right = e.clientX <= c.left + c.width / 2;
+      x = right ? c.right - r.width - 16 : c.left + 56;
+      y = Math.max(8, c.top + 8);
+      // In landscape the overlay pill owns the top-right corner.
+      if (right && chartMode.matches) y = pill.getBoundingClientRect().bottom + 8;
+    }
+    tooltip.style.left = `${Math.max(4, x)}px`;
+    tooltip.style.top = `${Math.min(y, innerHeight - r.height - 4)}px`;
   }
 
   function setHover(k: number | null, e?: PointerEvent): void {
@@ -443,22 +526,44 @@ export function jumpView(track: Track): HTMLElement {
     return best;
   }
 
-  for (const p of [timePlot]) {
-    p.canvas.addEventListener('pointermove', (e) => {
-      const s = jump().series;
-      const t = p.xAt(e.clientX - p.canvas.getBoundingClientRect().left);
-      const end = state.cropAtDeploy && jump().deploy !== null ? deployK() : s.t.length - 1;
-      if (t < 0 || t > s.t[end]) return setHover(null);
-      let k = 0;
-      while (k < end && s.t[k + 1] <= t) k++;
-      if (k < end && t - s.t[k] > s.t[k + 1] - t) k++;
-      setHover(k, e);
+  /** Hover the time chart at the pointer's time. */
+  function scrubTime(e: PointerEvent): void {
+    const s = jump().series;
+    const t = timePlot.xAt(e.clientX - timeCanvas.getBoundingClientRect().left);
+    const end = state.cropAtDeploy && jump().deploy !== null ? deployK() : s.t.length - 1;
+    if (t < 0 || t > s.t[end]) return setHover(null);
+    let k = 0;
+    while (k < end && s.t[k + 1] <= t) k++;
+    if (k < end && t - s.t[k] > s.t[k + 1] - t) k++;
+    setHover(k, e);
+  }
+
+  // Mouse: hover. Touch: press and drag to scrub; the reading stays after
+  // lifting the finger and clears on a tap elsewhere.
+  const scrubbers: [Plot, (e: PointerEvent) => void][] = [
+    [timePlot, scrubTime],
+    [profile, (e) => setHover(nearest(profile, profile.lines, e), e)],
+    [polar, (e) => setHover(nearest(polar, polar.lines, e), e)],
+  ];
+  for (const [p, scrub] of scrubbers) {
+    p.canvas.addEventListener('pointerdown', (e) => {
+      setPanel(false);
+      if (e.pointerType === 'mouse') return;
+      root.classList.add('scrubbing');
+      scrub(e);
     });
+    p.canvas.addEventListener('pointermove', scrub);
+    p.canvas.addEventListener('pointerleave', (e) => {
+      if (e.pointerType === 'mouse') setHover(null);
+    });
+    for (const type of ['pointerup', 'pointercancel'] as const) {
+      p.canvas.addEventListener(type, () => root.classList.remove('scrubbing'));
+    }
   }
-  for (const p of [profile, polar]) {
-    p.canvas.addEventListener('pointermove', (e) => setHover(nearest(p, p.lines, e), e));
-  }
-  for (const p of [profile, polar, timePlot]) p.canvas.addEventListener('pointerleave', () => setHover(null));
+  document.addEventListener('pointerdown', (e) => {
+    if (!root.isConnected || state.hover === null) return;
+    if (!(e.target as HTMLElement).closest?.('canvas.plot')) setHover(null);
+  });
 
   // ------------------------------------------------------------ controls
 
@@ -556,6 +661,23 @@ function loadFlag(key: string): boolean {
 function saveFlag(key: string, on: boolean): void {
   try {
     localStorage.setItem(key, on ? 'on' : 'off');
+  } catch {
+    // Not remembered; applies to this view.
+  }
+}
+
+function loadChart(): ChartKey {
+  try {
+    const key = localStorage.getItem('jump.chart');
+    return CHARTS.some((c) => c.key === key) ? (key as ChartKey) : 'profile';
+  } catch {
+    return 'profile';
+  }
+}
+
+function saveChart(key: ChartKey): void {
+  try {
+    localStorage.setItem('jump.chart', key);
   } catch {
     // Not remembered; applies to this view.
   }

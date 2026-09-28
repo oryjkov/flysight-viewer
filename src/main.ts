@@ -642,6 +642,28 @@ compact.addEventListener('change', () => {
   setDrawer(false);
   setMoreMenu(false);
 });
+// The jump view's landscape overlay has its own button for the file list.
+document.addEventListener('open-files', () => setDrawer(true));
+// Landscape chart mode only takes over the screen while a jump is shown.
+new MutationObserver(() => {
+  document.body.classList.toggle('has-jump', !!ui.viewer.querySelector('.jump-view'));
+}).observe(ui.viewer, { childList: true });
+{
+  // Portrait phones: the top bar slides away while scrolling down and comes
+  // back when scrolling up.
+  let lastY = scrollY;
+  addEventListener(
+    'scroll',
+    () => {
+      const y = scrollY;
+      if (!compact.matches || Math.abs(y - lastY) < 6) return;
+      const hide = y > lastY && y > 80 && !ui.connection.classList.contains('open');
+      document.body.classList.toggle('topbar-hidden', hide);
+      lastY = y;
+    },
+    { passive: true },
+  );
+}
 // With nothing open yet, a phone starts on the file list.
 if (compact.matches && ui.viewer.querySelector('.placeholder')) setDrawer(true);
 
