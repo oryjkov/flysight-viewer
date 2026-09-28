@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CLASSIFIER_VERSION, segment } from '../src/classify/segment';
+import { analyzeJump } from '../src/jump/analyze';
 import { validateLabel } from '../src/labels/schema';
 import { clockOffset } from '../src/track/sensor';
 import { derive, G, indexOfTime, isoTime, parseTrack, type Track } from '../src/track/track';
@@ -60,15 +61,7 @@ describe('sensor clock', () => {
 
 describe('segment', () => {
   it('finds exit, deploy, open and landing of a synthetic BASE jump', () => {
-    // Standing 30 s, freefall 10 s (1 g, drag-free), 3 s opening down to
-    // 8 m/s, 60 s canopy, then standing.
-    const track = synthetic(120, (t) => {
-      if (t < 30) return { vD: 0 };
-      if (t < 40) return { vD: G * (t - 30) };
-      if (t < 43) return { vD: 98 - 30 * (t - 40) };
-      if (t < 103) return { vD: 5, vN: 6 };
-      return { vD: 0 };
-    });
+    const track = syntheticBase();
     const jumps = segment(track);
     expect(jumps).toHaveLength(1);
     const [j] = jumps;
@@ -82,12 +75,45 @@ describe('segment', () => {
     expect(validateLabel({ ...label, prefill: { classifier: CLASSIFIER_VERSION, jumps } })).toEqual([]);
   });
 
+  it('turns the markers into jump stats and series', () => {
+    const track = syntheticBase();
+    const jump = analyzeJump(track, segment(track)[0]);
+    expect(jump.stats.freefallTime).toBeCloseTo(10, 0);
+    expect(jump.stats.canopyTime).toBeCloseTo(63, 0);
+    // Highest speed up to deploy, which sits just before the 98 m/s peak.
+    expect(jump.stats.maxSpeed).toBeGreaterThan(94);
+    expect(jump.stats.maxSpeed).toBeLessThanOrEqual(98);
+    // Ground is the landing altitude: 1500 m minus everything lost on the way.
+    expect(jump.ground).toBeCloseTo(track.alt[jump.landing!]);
+    // Drag-free freefall: height lost is ½·g·t² over the freefall time.
+    const ff = jump.stats.freefallTime!;
+    expect(jump.stats.exitAgl! - jump.stats.deployAgl!).toBeCloseTo((G * ff * ff) / 2, -1);
+    const s = jump.series;
+    expect(s.t[0]).toBe(0);
+    expect(s.drop[0]).toBe(0);
+    expect(s.distance[s.t.length - 1]).toBeGreaterThan(300);
+  });
+
   it('finds no jump in a track without freefall', () => {
     expect(segment(synthetic(60, () => ({ vD: 0, vN: 30 })))).toEqual([]);
   });
 });
 
-/** 10 Hz track with perfect fixes; altitude integrates vD. */
+/**
+ * Standing 30 s, freefall 10 s (1 g, drag-free), 3 s opening down to 8 m/s,
+ * 60 s canopy, then standing.
+ */
+function syntheticBase(): Track {
+  return synthetic(120, (t) => {
+    if (t < 30) return { vD: 0 };
+    if (t < 40) return { vD: G * (t - 30) };
+    if (t < 43) return { vD: 98 - 30 * (t - 40) };
+    if (t < 103) return { vD: 5, vN: 6 };
+    return { vD: 0 };
+  });
+}
+
+/** 10 Hz track with perfect fixes; altitude integrates vD, latitude vN. */
 function synthetic(seconds: number, v: (t: number) => { vD: number; vN?: number }): Track {
   const n = seconds * 10;
   const t0 = Date.parse('2026-01-01T00:00:00Z') / 1000;
@@ -107,13 +133,16 @@ function synthetic(seconds: number, v: (t: number) => { vD: number; vN?: number 
     length: n,
   };
   let alt = 1500;
+  let lat = 46.5;
   for (let i = 0; i < n; i++) {
     const s = v(i / 10);
     track.t[i] = t0 + i / 10;
     track.velD[i] = s.vD;
     track.velN[i] = s.vN ?? 0;
     track.alt[i] = alt;
+    track.lat[i] = lat;
     alt -= s.vD / 10;
+    lat += (s.vN ?? 0) / 10 / 111195;
   }
   return track;
 }

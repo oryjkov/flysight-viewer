@@ -6,7 +6,9 @@ import { BleLink, isWebBluetoothAvailable } from './ble/transport';
 import { fakeFsFromFiles } from './demo/folder';
 import { ATTR_HIDDEN, ATTR_SYSTEM, joinPath, parentPath } from './fs/fat';
 import { formatBytes, formatDuration, summarize, type Summary } from './parse/summary';
+import { jumpView } from './jump/view';
 import * as store from './storage';
+import { parseTrack } from './track/track';
 import { byId, fill, h } from './ui/dom';
 
 interface Session {
@@ -22,6 +24,8 @@ const ui = {
   disconnect: byId<HTMLButtonElement>('disconnect'),
   install: byId<HTMLButtonElement>('install'),
   folderInput: byId<HTMLInputElement>('folder-input'),
+  openFile: byId<HTMLButtonElement>('open-file'),
+  fileInput: byId<HTMLInputElement>('file-input'),
   notice: byId('notice'),
   refresh: byId<HTMLButtonElement>('refresh'),
   crumbs: byId('crumbs'),
@@ -369,9 +373,11 @@ function showFile(meta: store.StoredFileMeta, data: Uint8Array, note: string, ex
   }
   const warnings = [...extraWarnings, ...summary.warnings];
   const canRedownload = session?.deviceId === meta.deviceId;
+  const jump = isTrackFile(name) ? trackView(data) : null;
 
   fill(
     ui.viewer,
+    jump,
     h('h3', {}, meta.path),
     h('div', { class: 'kind' }, `${summary.kind} · ${formatBytes(data.length)} · ${meta.deviceName} · ${note}`),
     h(
@@ -411,6 +417,57 @@ function showFile(meta: store.StoredFileMeta, data: Uint8Array, note: string, ex
     ]),
     summary.preview !== undefined && h('pre', { class: 'preview' }, summary.preview),
   );
+  if (jump) {
+    // The jump comes first; the file's own summary folds away below it.
+    const box = h('details', { class: 'file-details' }, h('summary', {}, 'File details'));
+    box.append(...ui.viewer.querySelectorAll(':scope > dl.fields, :scope > h4, :scope > .table-wrap, :scope > pre'));
+    ui.viewer.append(box);
+  }
+}
+
+/** FlySight 2 TRACK.CSV, or a FlySight 1 log (HH-MM-SS.CSV). */
+function isTrackFile(name: string): boolean {
+  return /^(TRACK\.CSV|\d\d-\d\d-\d\d\.CSV)$/i.test(name);
+}
+
+function trackView(data: Uint8Array): HTMLElement | null {
+  try {
+    const track = parseTrack(data);
+    return track.length > 0 ? jumpView(track) : null;
+  } catch (e) {
+    return h('div', { class: 'error-box' }, `Could not analyse the track: ${errorMessage(e)}`);
+  }
+}
+
+/** Open a track file from disk, keeping it in the library like a download. */
+async function openLocalFile(file: File): Promise<void> {
+  const data = new Uint8Array(await file.arrayBuffer());
+  let path = file.name;
+  try {
+    const track = parseTrack(data);
+    if (track.length) path = `${new Date(track.t[0] * 1000).toISOString().slice(0, 19)}/${file.name}`;
+  } catch {
+    // Not a track: keep the plain name.
+  }
+  const meta: store.StoredFileMeta = {
+    key: store.fileKey('local', path),
+    deviceId: 'local',
+    deviceName: 'Opened from disk',
+    path,
+    size: data.length,
+    modified: new Date(file.lastModified).toISOString(),
+    downloadedAt: Date.now(),
+  };
+  const warnings: string[] = [];
+  try {
+    await store.saveFile(meta, data);
+    await refreshLibrary();
+  } catch (e) {
+    warnings.push(`Could not keep the file in the browser: ${errorMessage(e)}`);
+  }
+  selectedKey = meta.key;
+  renderLibrary();
+  showFile(meta, data, `Opened ${file.name}`, warnings);
 }
 
 function showMessage(path: string, message: string, retry?: () => void): void {
@@ -510,6 +567,12 @@ function errorMessage(e: unknown): string {
 
 ui.connect.addEventListener('click', () => void connectBle());
 ui.simulate.addEventListener('click', () => ui.folderInput.click());
+ui.openFile.addEventListener('click', () => ui.fileInput.click());
+ui.fileInput.addEventListener('change', () => {
+  const file = ui.fileInput.files?.[0];
+  ui.fileInput.value = '';
+  if (file) void openLocalFile(file);
+});
 ui.folderInput.addEventListener('change', () => {
   if (ui.folderInput.files) void simulateFromFolder(ui.folderInput.files);
   ui.folderInput.value = '';
