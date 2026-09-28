@@ -6,7 +6,7 @@
 import type { Discipline, JumpLabel, Marker, Platform } from '../labels/schema';
 import { derive, goodFix, isoTime, type Track } from '../track/track';
 
-export const CLASSIFIER_VERSION = '0.1.0';
+export const CLASSIFIER_VERSION = '0.1.1';
 
 /** Freefall anchor: vD above this for at least ANCHOR_MIN_S. */
 const ANCHOR_VD = 10;
@@ -28,6 +28,9 @@ const OPENING_DRAG = 1.3;
 const GROUND_SPEED = 3;
 const GROUND_VD = 1.5;
 const GROUND_MIN_S = 10;
+/** Climbing faster than this (vD, m/s) at more than FLARE_SPEED is canopy flight. */
+const FLARE_CLIMB_VD = -2;
+const FLARE_SPEED = 5;
 
 export function segment(track: Track): JumpLabel[] {
   const n = track.length;
@@ -129,7 +132,15 @@ export function segment(track: Track): JumpLabel[] {
     }
     if (groundStart > 0) {
       landing = groundStart;
-      while (landing > from && vD[landing] < 0.5) landing--;
+      // Walk back over ground samples, stopping at the canopy: still
+      // descending, or clearly climbing at canopy speed (a flare that gains
+      // height before touchdown). Small negative vD — GPS noise, altitude
+      // drift, walking uphill — is ground.
+      while (landing > from) {
+        const flare = vD[landing] <= FLARE_CLIMB_VD && vH[landing] > FLARE_SPEED;
+        if (vD[landing] >= 0.5 || flare) break;
+        landing--;
+      }
     }
 
     jumps.push({

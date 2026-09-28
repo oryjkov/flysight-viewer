@@ -95,6 +95,10 @@ about 0 and altitude stops falling.
   running). That is ground; do not wait for vH to reach 0.
 - After a swoop the vH surge comes before touchdown; `landing` is where vD
   reaches 0, not where vH does.
+- A flare can gain height just before touchdown (vD clearly negative, e.g.
+  −2 m/s or more, at canopy speed; altitude rises). That is still canopy
+  flight: `landing` is after the climb, where vD comes back to about 0 — not
+  where vD first crossed 0 on the way into the flare.
 - Walking afterwards, including downhill (steady vH ≈ 1, vD ≈ 1 m/s), is
   ground.
 
