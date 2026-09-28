@@ -10,6 +10,17 @@ get a quick summary of each file.
 - Summaries: track duration, sample rate, altitude range, max speeds, GNSS
   quality; sensor record types and rates; event list; UBX message counts.
 
+**Live at https://oryjkov.github.io/flysight-viewer/** — everything runs in
+the browser; downloaded files never leave your machine.
+
+## Hosting
+
+The site is deployed to GitHub Pages by `.github/workflows/pages.yml` on every
+push to `master`: it runs the tests, builds with Vite and publishes `dist/`.
+In CI the build uses the base path `/flysight-viewer/` (see `vite.config.ts`);
+local builds use `/`. Pages is served over HTTPS, which Web Bluetooth
+requires. The Pages source is set to "GitHub Actions" in the repo settings.
+
 ## Running
 
 ```sh
