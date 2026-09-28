@@ -260,3 +260,102 @@ kbd {
   background: var(--panel);
   font-size: 11px;
 }
+
+.help-button {
+  margin-left: auto;
+}
+
+.help-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  width: min(620px, 92vw);
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+}
+
+.help-panel[hidden] {
+  display: none;
+}
+
+.help-panel-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.help-panel-head button {
+  margin-left: auto;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.rules {
+  overflow-y: auto;
+  padding: 4px 16px 24px;
+  line-height: 1.5;
+}
+
+.rules h1 {
+  font-size: 20px;
+}
+
+.rules h2 {
+  margin-top: 1.6em;
+  font-size: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rules h3 {
+  font-size: 14px;
+}
+
+.rules table {
+  border-collapse: collapse;
+}
+
+.rules th,
+.rules td {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.rules code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--bg);
+  font-size: 12px;
+}
+
+.rules pre {
+  overflow-x: auto;
+  padding: 8px;
+  background: var(--bg);
+}
+
+.rules pre code {
+  padding: 0;
+}
+
+.rules .hl {
+  background: #fff4cc;
+  box-shadow: -8px 0 0 #fff4cc, 8px 0 0 #fff4cc;
+}
+
+.rule-help {
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 1.4;
+}

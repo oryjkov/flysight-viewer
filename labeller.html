@@ -30,6 +30,7 @@
           <span id="status" class="badge"></span>
           <span id="dirty" class="dirty" hidden title="Unsaved changes">●</span>
           <span id="error" class="error"></span>
+          <button id="help" class="help-button" title="Labelling rules (?)">? Rules</button>
         </div>
         <div class="head-row">
           <span id="jump-tabs" class="tabs"></span>
@@ -76,11 +77,19 @@
         <span>
           <kbd>a</kbd>/<kbd>d</kbd> previous/next track · <kbd>Enter</kbd> save · <kbd>Tab</kbd> or <kbd>1</kbd>–<kbd>4</kbd> marker ·
           <kbd>←</kbd><kbd>→</kbd> 1 sample, with <kbd>⇧</kbd> 1 s · <kbd>u</kbd> unsure · <kbd>n</kbd> not recorded ·
-          <kbd>[</kbd><kbd>]</kbd> jump · <kbd>f</kbd> fit · <kbd>x</kbd> no jump · <kbd>s</kbd> skip · wheel zoom,
+          <kbd>[</kbd><kbd>]</kbd> jump · <kbd>f</kbd> fit · <kbd>x</kbd> no jump · <kbd>s</kbd> skip · <kbd>?</kbd> rules · wheel zoom,
           drag pan
         </span>
       </footer>
     </main>
+    <aside id="help-panel" class="help-panel" hidden>
+      <div class="help-panel-head">
+        <strong>Labelling rules</strong>
+        <span class="muted">labels/RULES.md</span>
+        <button id="help-close" title="Close (Esc)">×</button>
+      </div>
+      <div id="rules" class="rules"></div>
+    </aside>
     <script type="module" src="/src/labeller/main.ts"></script>
   </body>
 </html>

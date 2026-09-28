@@ -4,6 +4,8 @@
  * Served by the dev-server plugin in devServer.ts.
  */
 import './labeller.css';
+import { marked } from 'marked';
+import rulesMarkdown from '../../labels/RULES.md?raw';
 import { CLASSIFIER_VERSION, segment } from '../classify/segment';
 import {
   DISCIPLINES,
@@ -100,6 +102,7 @@ for (const el of document.querySelectorAll<HTMLElement>('.loupe')) {
   const name = el.dataset.marker as MarkerName;
   el.style.setProperty('--c', MARKER_COLOR[name]);
   el.innerHTML = `<div class="loupe-head"><strong>${name.toUpperCase()}</strong>
+    <button class="rule-help" title="Rule for this marker">?</button>
     <label><input type="checkbox" class="unsure" /> unsure</label>
     <label><input type="checkbox" class="missing" /> not recorded</label>
     <span class="time"></span></div><canvas></canvas>`;
@@ -813,8 +816,61 @@ for (const [m, loupe] of loupes) {
     loupe.center = null;
     render();
   });
+  loupe.el.querySelector<HTMLButtonElement>('.rule-help')!.onclick = () => openHelp(m);
   loupe.el.querySelector<HTMLInputElement>('.unsure')!.onchange = () => toggleUnsure(m);
   loupe.el.querySelector<HTMLInputElement>('.missing')!.onchange = () => toggleMissing(m);
+}
+
+// ---------------------------------------------------------------- rules
+
+const helpPanel = $('help-panel');
+const rulesEl = $('rules');
+rulesEl.innerHTML = marked.parse(rulesMarkdown, { async: false });
+for (const h of rulesEl.querySelectorAll('h1, h2, h3')) {
+  h.id = (h.textContent ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+// Each loupe's tooltip: the first sentence of its marker's rule.
+for (const [m, loupe] of loupes) {
+  const text = rulesEl.querySelector(`#${m} + p`)?.textContent?.replace(/\s+/g, ' ');
+  const first = text?.split(/(?<=\.) /)[0];
+  if (first) {
+    loupe.el.querySelector('strong')!.title = `${m}: ${first}`;
+    loupe.el.querySelector<HTMLElement>('.rule-help')!.title = `${m}: ${first} Click for the full rule.`;
+  }
+}
+
+/** Show the rules, optionally scrolled to and highlighting one section. */
+function openHelp(section?: string): void {
+  helpPanel.hidden = false;
+  for (const el of rulesEl.querySelectorAll('.hl')) el.classList.remove('hl');
+  const heading = section ? rulesEl.querySelector<HTMLElement>(`#${section}`) : null;
+  if (!heading) {
+    rulesEl.scrollTop = 0;
+    return;
+  }
+  // The heading and everything up to the next heading of the same or higher level.
+  const level = Number(heading.tagName[1]);
+  for (let el: Element | null = heading; el; el = el.nextElementSibling) {
+    if (el !== heading && /^H[1-6]$/.test(el.tagName) && Number(el.tagName[1]) <= level) break;
+    el.classList.add('hl');
+  }
+  heading.scrollIntoView({ block: 'start' });
+}
+
+function closeHelp(): void {
+  helpPanel.hidden = true;
+}
+
+$('help').onclick = () => (helpPanel.hidden ? openHelp() : closeHelp());
+$('help-close').onclick = closeHelp;
+// Show the rules once on a first visit.
+try {
+  if (!localStorage.getItem('labeller.rulesSeen')) {
+    localStorage.setItem('labeller.rulesSeen', '1');
+    openHelp();
+  }
+} catch {
+  // Storage unavailable: don't open it every time.
 }
 
 function clearHover(): void {
@@ -890,6 +946,13 @@ addEventListener('keydown', (e) => {
   switch (e.key) {
     case 'Enter':
       void saveNow();
+      break;
+    case '?':
+      if (helpPanel.hidden) openHelp(activeMarker);
+      else closeHelp();
+      break;
+    case 'Escape':
+      closeHelp();
       break;
     case 'a':
       step(-1);
