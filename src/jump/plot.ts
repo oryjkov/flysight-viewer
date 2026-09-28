@@ -21,6 +21,8 @@ export interface PlotLine {
   from?: number;
   to?: number;
   color: string;
+  /** Plot against the right-hand axis. */
+  right?: boolean;
   /** Per-segment colour, overriding `color`. */
   colorAt?: (i: number) => string;
   width?: number;
@@ -40,6 +42,8 @@ export interface PlotMark {
   color: string;
   /** Hollow ring (a named event) rather than a filled dot (the cursor). */
   ring?: boolean;
+  /** Plot against the right-hand axis. */
+  right?: boolean;
 }
 
 export class Plot {
@@ -49,6 +53,8 @@ export class Plot {
   height = 0;
   x: PlotAxis = { min: 0, max: 1, title: '' };
   y: PlotAxis = { min: 0, max: 1, title: '' };
+  /** Optional right-hand axis; its ticks are labelled but not gridded. */
+  y2: PlotAxis | null = null;
   lines: PlotLine[] = [];
   refs: PlotRef[] = [];
   marks: PlotMark[] = [];
@@ -84,10 +90,11 @@ export class Plot {
     return a.l + (this.x.invert ? 1 - f : f) * a.w;
   }
 
-  py(y: number): number {
+  py(y: number, right = false): number {
     const a = this.area;
-    const f = (y - this.y.min) / (this.y.max - this.y.min);
-    return a.t + (this.y.invert ? f : 1 - f) * a.h;
+    const axis = right && this.y2 ? this.y2 : this.y;
+    const f = (y - axis.min) / (axis.max - axis.min);
+    return a.t + (axis.invert ? f : 1 - f) * a.h;
   }
 
   /** Data x at a CSS-pixel offset from the canvas' left edge. */
@@ -137,6 +144,11 @@ export class Plot {
       stroke(ctx, grid, a.l, y, a.l + a.w, y);
       ctx.fillText(fmt(this.y, v), a.l - 6, y);
     }
+    if (this.y2) {
+      ctx.textAlign = 'left';
+      for (const v of ticks(this.y2, a.h / 40)) ctx.fillText(fmt(this.y2, v), a.l + a.w + 6, this.py(v, true));
+      stroke(ctx, axis, a.l + a.w - 0.5, a.t, a.l + a.w - 0.5, a.t + a.h);
+    }
     stroke(ctx, axis, a.l + 0.5, a.t, a.l + 0.5, a.t + a.h);
     stroke(ctx, axis, a.l, a.t + a.h - 0.5, a.l + a.w, a.t + a.h - 0.5);
 
@@ -151,6 +163,14 @@ export class Plot {
     ctx.textBaseline = 'middle';
     ctx.fillText(this.y.title, 0, 0);
     ctx.restore();
+    if (this.y2) {
+      ctx.save();
+      ctx.translate(this.width - 10, a.t + a.h / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(this.y2.title, 0, 0);
+      ctx.restore();
+    }
 
     ctx.save();
     ctx.beginPath();
@@ -183,7 +203,7 @@ export class Plot {
     const surface = css.getPropertyValue('--chart-surface').trim() || '#fff';
     for (const m of this.marks) {
       const x = this.px(m.x);
-      const y = this.py(m.y);
+      const y = this.py(m.y, m.right);
       if (x < a.l - 1 || x > a.l + a.w + 1 || y < a.t - 1 || y > a.t + a.h + 1) continue;
       ctx.beginPath();
       ctx.arc(x, y, m.ring ? 6 : 4.5, 0, Math.PI * 2);
@@ -219,10 +239,10 @@ export class Plot {
           color = c;
           ctx.strokeStyle = c;
           ctx.beginPath();
-          ctx.moveTo(this.px(line.x[i]), this.py(line.y[i]));
+          ctx.moveTo(this.px(line.x[i]), this.py(line.y[i], line.right));
           open = true;
         }
-        ctx.lineTo(this.px(line.x[i + 1]), this.py(line.y[i + 1]));
+        ctx.lineTo(this.px(line.x[i + 1]), this.py(line.y[i + 1], line.right));
       }
       if (open) ctx.stroke();
       return;
@@ -236,8 +256,8 @@ export class Plot {
         pen = false;
         continue;
       }
-      if (pen) ctx.lineTo(this.px(line.x[i]), this.py(y));
-      else ctx.moveTo(this.px(line.x[i]), this.py(y));
+      if (pen) ctx.lineTo(this.px(line.x[i]), this.py(y, line.right));
+      else ctx.moveTo(this.px(line.x[i]), this.py(y, line.right));
       pen = true;
     }
     ctx.stroke();

@@ -63,9 +63,8 @@ export function jumpView(track: Track): HTMLElement {
   const rangeValue = h('span', { class: 'range-value' });
   const speedLegend = h('span', { class: 'ramp-legend' });
   const polarCanvas = h('canvas', { class: 'plot plot-square' });
-  const speedCanvas = h('canvas', { class: 'plot plot-speed' });
-  const glideCanvas = h('canvas', { class: 'plot plot-small' });
-  const altCanvas = h('canvas', { class: 'plot plot-small' });
+  const timeCanvas = h('canvas', { class: 'plot plot-time' });
+  const timeLegend = h('span', { class: 'legend' });
   const cropInput = h('input', { type: 'checkbox', checked: true });
   const tooltip = h('div', { class: 'jump-tooltip', hidden: true });
 
@@ -115,24 +114,10 @@ export function jumpView(track: Track): HTMLElement {
         'div',
         { class: 'card-head' },
         h('h4', {}, 'Time chart'),
-        h(
-          'span',
-          { class: 'legend' },
-          swatch('--series-1'),
-          'total speed',
-          swatch('--series-2'),
-          'horizontal',
-          swatch('--series-3'),
-          'vertical',
-        ),
+        timeLegend,
         h('label', { class: 'crop' }, cropInput, ' Crop at deploy'),
       ),
-      h('div', { class: 'panel-title' }, 'Speed'),
-      speedCanvas,
-      h('div', { class: 'panel-title' }, 'Glide ratio'),
-      glideCanvas,
-      h('div', { class: 'panel-title' }, 'Height above ground'),
-      altCanvas,
+      timeCanvas,
     ),
     tooltip,
   );
@@ -141,11 +126,31 @@ export function jumpView(track: Track): HTMLElement {
   profile.square = true;
   const polar = new Plot(polarCanvas);
   polar.square = true;
-  const speedPlot = new Plot(speedCanvas);
-  const glidePlot = new Plot(glideCanvas);
-  const altPlot = new Plot(altCanvas);
-  const timePlots = [speedPlot, glidePlot, altPlot];
-  for (const p of [speedPlot, glidePlot]) p.pad.b = 22;
+  const timePlot = new Plot(timeCanvas);
+  timePlot.pad.r = 48;
+
+  // Time chart series, in legend order; clicking a legend entry hides it.
+  const TIME_SERIES = [
+    { key: 'elevation', name: 'elevation', color: '--chart-ink' },
+    { key: 'glide', name: 'glide ratio', color: '--series-4' },
+    { key: 'total', name: 'total speed', color: '--series-1' },
+    { key: 'horizontal', name: 'horizontal', color: '--series-2' },
+    { key: 'vertical', name: 'vertical', color: '--series-3' },
+  ] as const;
+  type TimeKey = (typeof TIME_SERIES)[number]['key'];
+  const hidden = new Set<TimeKey>();
+  timeLegend.append(
+    ...TIME_SERIES.map(({ key, name, color }) => {
+      const b = h('button', { class: 'legend-item', 'aria-pressed': 'true', title: `Show or hide ${name}` }, swatch(color), name);
+      b.onclick = () => {
+        if (hidden.has(key)) hidden.delete(key);
+        else hidden.add(key);
+        b.setAttribute('aria-pressed', String(!hidden.has(key)));
+        renderPlots();
+      };
+      return b;
+    }),
+  );
 
   // ------------------------------------------------------------ rendering
 
@@ -307,39 +312,35 @@ export function jumpView(track: Track): HTMLElement {
       j.deploy !== null && !state.cropAtDeploy ? [{ x0: s.t[dk], y0: -1e9, x1: s.t[dk], y1: 1e9 }] : [];
     const time = { min: 0, max: Math.max(1, tMax), title: 'Time from exit (s)' };
 
+    // Speeds on the left axis, glide ratio on the right; elevation is scaled
+    // to the chart's height (its values are in the tooltip).
     const [speedLo, speedHi] = [Math.min(0, inRange(vD)[0]), Math.max(inRange(total)[1], inRange(vH)[1])];
-    speedPlot.x = { ...time, title: '' };
-    speedPlot.y = { min: speedLo < 0 ? -niceMax(-speedLo, 5) : 0, max: niceMax(speedHi, 10), title: u.speedUnit };
-    speedPlot.lines = [
-      { x: s.t, y: total, to: end, color: c.series1 },
-      { x: s.t, y: vH, to: end, color: c.series2 },
-      { x: s.t, y: vD, to: end, color: c.series3 },
-    ];
-    speedPlot.refs = deployRef;
-
-    glidePlot.x = { ...time, title: '' };
-    glidePlot.y = { min: 0, max: 4, title: 'ratio' };
-    glidePlot.lines = [{ x: s.t, y: s.glide, to: end, color: c.series1 }];
-    glidePlot.refs = deployRef;
-
-    const agl = scaled(s.agl, u.length);
-    altPlot.x = time;
-    altPlot.y = { min: Math.min(0, inRange(agl)[0]), max: niceMax(inRange(agl)[1], 10), title: u.lengthUnit };
-    altPlot.lines = [{ x: s.t, y: agl, to: end, color: c.ink }];
-    altPlot.refs = deployRef;
-
-    for (const p of timePlots) {
-      p.cursorX = hover !== null && hover <= end ? s.t[hover] : null;
-      const marks: PlotMark[] = [];
-      if (hover !== null && hover <= end) {
-        for (const line of p.lines) {
-          const y = line.y[hover];
-          if (Number.isFinite(y)) marks.push({ x: s.t[hover], y, color: line.color });
-        }
+    const yMin = speedLo < 0 ? -niceMax(-speedLo, 5) : 0;
+    const yMax = niceMax(speedHi, 10);
+    const aglMax = Math.max(1, inRange(s.agl)[1]);
+    const elevation = Float64Array.from(s.agl, (v) => yMin + (v / aglMax) * (yMax - yMin));
+    timePlot.x = time;
+    timePlot.y = { min: yMin, max: yMax, title: `Speed (${u.speedUnit})` };
+    timePlot.y2 = { min: 0, max: 4, title: 'Glide ratio' };
+    const lines: Record<TimeKey, PlotLine> = {
+      elevation: { x: s.t, y: elevation, to: end, color: c.ink, width: 1.5 },
+      glide: { x: s.t, y: s.glide, to: end, color: c.series4, right: true, width: 1.5 },
+      total: { x: s.t, y: total, to: end, color: c.series1 },
+      horizontal: { x: s.t, y: vH, to: end, color: c.series2 },
+      vertical: { x: s.t, y: vD, to: end, color: c.series3 },
+    };
+    timePlot.lines = TIME_SERIES.filter(({ key }) => !hidden.has(key)).map(({ key }) => lines[key]);
+    timePlot.refs = deployRef;
+    timePlot.cursorX = hover !== null && hover <= end ? s.t[hover] : null;
+    const marks: PlotMark[] = [];
+    if (hover !== null && hover <= end) {
+      for (const line of timePlot.lines) {
+        const y = line.y[hover];
+        if (Number.isFinite(y)) marks.push({ x: s.t[hover], y, color: line.color, right: line.right });
       }
-      p.marks = marks;
-      p.draw();
     }
+    timePlot.marks = marks;
+    timePlot.draw();
   }
 
   function render(): void {
@@ -357,11 +358,11 @@ export function jumpView(track: Track): HTMLElement {
       h('div', { class: 'tt-row' }, color ? swatch(color) : h('i', { class: 'sw-none' }), h('span', {}, name), h('b', {}, value));
     tooltip.replaceChildren(
       h('div', { class: 'tt-title' }, `${s.t[k].toFixed(1)} s from exit`),
+      row('--chart-ink', 'Elevation', `${len(s.agl[k], u)} AGL`),
+      row('--series-4', 'Glide ratio', Number.isFinite(s.glide[k]) ? s.glide[k].toFixed(2) : '—'),
       row('--series-1', 'Total speed', speed(s.speed[k], u)),
       row('--series-2', 'Horizontal', speed(s.velH[k], u)),
       row('--series-3', 'Vertical', speed(s.velD[k], u)),
-      row(null, 'Glide ratio', Number.isFinite(s.glide[k]) ? s.glide[k].toFixed(2) : '—'),
-      row(null, 'Height', `${len(s.agl[k], u)} AGL`),
       row(null, 'Distance', len(s.distance[k], u)),
     );
     tooltip.hidden = false;
@@ -401,7 +402,7 @@ export function jumpView(track: Track): HTMLElement {
     return best;
   }
 
-  for (const p of timePlots) {
+  for (const p of [timePlot]) {
     p.canvas.addEventListener('pointermove', (e) => {
       const s = jump().series;
       const t = p.xAt(e.clientX - p.canvas.getBoundingClientRect().left);
@@ -416,7 +417,7 @@ export function jumpView(track: Track): HTMLElement {
   for (const p of [profile, polar]) {
     p.canvas.addEventListener('pointermove', (e) => setHover(nearest(p, p.lines, e), e));
   }
-  for (const p of [profile, polar, ...timePlots]) p.canvas.addEventListener('pointerleave', () => setHover(null));
+  for (const p of [profile, polar, timePlot]) p.canvas.addEventListener('pointerleave', () => setHover(null));
 
   // ------------------------------------------------------------ controls
 
@@ -444,10 +445,16 @@ export function jumpView(track: Track): HTMLElement {
 
 // ---------------------------------------------------------------- helpers
 
-function colors(el: HTMLElement): { series1: string; series2: string; series3: string; ink: string } {
+function colors(el: HTMLElement): Record<'series1' | 'series2' | 'series3' | 'series4' | 'ink', string> {
   const css = getComputedStyle(el);
   const v = (name: string) => css.getPropertyValue(name).trim();
-  return { series1: v('--series-1'), series2: v('--series-2'), series3: v('--series-3'), ink: v('--chart-ink') };
+  return {
+    series1: v('--series-1'),
+    series2: v('--series-2'),
+    series3: v('--series-3'),
+    series4: v('--series-4'),
+    ink: v('--chart-ink'),
+  };
 }
 
 /** Colour for a speed in m/s on the start profile's scale. */
