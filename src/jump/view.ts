@@ -16,11 +16,21 @@ const UNITS: Record<UnitSystem, { speed: number; speedUnit: string; length: numb
   imperial: { speed: 2.2369363, speedUnit: 'mph', length: 3.2808399, lengthUnit: 'ft' },
 };
 
-/** Sequential speed ramp (single hue), slowest first, per theme. */
-const RAMP = {
-  light: ['#86b6ef', '#6da7ec', '#5598e7', '#3987e5', '#2a78d6', '#256abf', '#1c5cab', '#184f95', '#104281', '#0d366b'],
-  dark: ['#184f95', '#1c5cab', '#256abf', '#2a78d6', '#3987e5', '#5598e7', '#6da7ec', '#86b6ef', '#9ec5f4', '#cde2fb'],
-};
+/**
+ * Speed colour scale for the start profile: dark blue when slow, through
+ * cyan, yellow and orange, to red at RAMP_MAX and above.
+ */
+const SPEED_STOPS: [number, [number, number, number]][] = [
+  [0, [0, 0, 160]],
+  [0.12, [0, 40, 255]],
+  [0.25, [0, 210, 255]],
+  [0.38, [40, 255, 150]],
+  [0.5, [255, 240, 0]],
+  [0.75, [255, 130, 0]],
+  [1, [255, 20, 0]],
+];
+/** Colour steps: enough to look continuous, few enough to batch line segments. */
+const SPEED_STEPS = 64;
 /** Top of the speed colour scale, m/s (200 km/h). */
 const RAMP_MAX = 200 / 3.6;
 const PROFILE_DEFAULT = 800;
@@ -201,9 +211,21 @@ export function jumpView(track: Track): HTMLElement {
     unitsButton.textContent = u.speedUnit;
     rangeValue.textContent = len(state.profileRange, u);
     rangeInput.value = String(state.profileRange);
+    const gradient = SPEED_STOPS.map(([f]) => `${speedColor(f * RAMP_MAX)} ${f * 100}%`).join(', ');
     speedLegend.replaceChildren(
-      h('span', { class: 'ramp-bar', style: `background: linear-gradient(90deg, ${ramp().join(', ')})` }),
-      `0–${Math.round(RAMP_MAX * u.speed)}+ ${u.speedUnit}`,
+      h(
+        'span',
+        { class: 'ramp' },
+        h('span', { class: 'ramp-bar', style: `background: linear-gradient(90deg, ${gradient})` }),
+        h(
+          'span',
+          { class: 'ramp-ticks' },
+          ...[0, 0.25, 0.5, 0.75, 1].map((f) =>
+            h('span', {}, `${Math.round(f * RAMP_MAX * u.speed)}${f === 1 ? '+' : ''}`),
+          ),
+        ),
+      ),
+      u.speedUnit,
     );
   }
 
@@ -224,7 +246,6 @@ export function jumpView(track: Track): HTMLElement {
     const range = state.profileRange * u.length;
     let last = 0;
     while (last < dk && s.drop[last + 1] <= state.profileRange * 1.02) last++;
-    const rampColors = ramp();
     profile.x = { min: 0, max: range, title: `Horizontal distance (${u.lengthUnit})` };
     profile.y = { min: 0, max: range, title: `Vertical drop (${u.lengthUnit})`, invert: true };
     profile.refs = [{ x0: 0, y0: 0, x1: range, y1: range, label: '1:1' }];
@@ -233,8 +254,8 @@ export function jumpView(track: Track): HTMLElement {
         x: scaled(s.distance, u.length),
         y: scaled(s.drop, u.length),
         to: last,
-        color: rampColors[0],
-        colorAt: (i) => rampColors[Math.min(rampColors.length - 1, Math.floor((s.speed[i] / RAMP_MAX) * rampColors.length))],
+        color: speedColor(0),
+        colorAt: (i) => speedColor(s.speed[i]),
         width: 3,
       },
     ];
@@ -429,8 +450,16 @@ function colors(el: HTMLElement): { series1: string; series2: string; series3: s
   return { series1: v('--series-1'), series2: v('--series-2'), series3: v('--series-3'), ink: v('--chart-ink') };
 }
 
-function ramp(): string[] {
-  return matchMedia('(prefers-color-scheme: dark)').matches ? RAMP.dark : RAMP.light;
+/** Colour for a speed in m/s on the start profile's scale. */
+function speedColor(ms: number): string {
+  const f = Math.round(Math.min(1, Math.max(0, ms / RAMP_MAX)) * SPEED_STEPS) / SPEED_STEPS;
+  let k = 1;
+  while (k < SPEED_STOPS.length - 1 && SPEED_STOPS[k][0] < f) k++;
+  const [f0, c0] = SPEED_STOPS[k - 1];
+  const [f1, c1] = SPEED_STOPS[k];
+  const w = (f - f0) / (f1 - f0);
+  const [r, g, b] = c0.map((c, i) => Math.round(c + (c1[i] - c) * w));
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 function swatch(variable: string): HTMLElement {
