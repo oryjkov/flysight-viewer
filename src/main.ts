@@ -20,6 +20,7 @@ const ui = {
   connect: byId<HTMLButtonElement>('connect'),
   simulate: byId<HTMLButtonElement>('simulate'),
   disconnect: byId<HTMLButtonElement>('disconnect'),
+  install: byId<HTMLButtonElement>('install'),
   folderInput: byId<HTMLInputElement>('folder-input'),
   notice: byId('notice'),
   refresh: byId<HTMLButtonElement>('refresh'),
@@ -520,6 +521,33 @@ ui.disconnect.addEventListener('click', () => {
 ui.refresh.addEventListener('click', () => navigate(cwd));
 window.addEventListener('beforeunload', (e) => {
   if (transfer) e.preventDefault();
+});
+
+// Chrome's install prompt event; not in TypeScript's DOM types.
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
+// Chrome on Android rarely shows its own install banner, so offer an
+// explicit button whenever the browser says the app can be installed.
+let installPrompt: BeforeInstallPromptEvent | null = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e as BeforeInstallPromptEvent;
+  ui.install.hidden = false;
+});
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  ui.install.hidden = true;
+});
+ui.install.addEventListener('click', async () => {
+  if (!installPrompt) return;
+  const prompt = installPrompt;
+  installPrompt = null;
+  ui.install.hidden = true;
+  await prompt.prompt();
+  await prompt.userChoice;
 });
 
 if (!isWebBluetoothAvailable()) {
