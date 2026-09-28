@@ -42,6 +42,22 @@ export class BleLink implements Link {
     return BleLink.connect(device);
   }
 
+  /**
+   * Reconnect to a FlySight this site was allowed to use before, without the
+   * device chooser. Returns null when the browser can't (no `getDevices`, or
+   * the permission is gone). Waits for the FlySight to advertise — it may be
+   * asleep or out of range — and rejects when `signal` aborts.
+   */
+  static async reconnect(deviceId: string, signal: AbortSignal): Promise<BleLink | null> {
+    if (!navigator.bluetooth.getDevices) return null;
+    const device = (await navigator.bluetooth.getDevices()).find((d) => d.id === deviceId);
+    signal.throwIfAborted();
+    if (!device) return null;
+    await waitForAdvertisement(device, signal);
+    signal.throwIfAborted();
+    return BleLink.connect(device);
+  }
+
   static async connect(device: BluetoothDevice): Promise<BleLink> {
     if (!device.gatt) throw new Error('Device has no GATT server');
     const server = await device.gatt.connect();
@@ -90,4 +106,28 @@ export class BleLink implements Link {
     this.device.removeEventListener('gattserverdisconnected', this.handleDisconnect);
     this.onDisconnect?.();
   };
+}
+
+/**
+ * Resolve once the device is heard advertising, i.e. awake and in range.
+ * Where the browser can't watch advertisements, resolve straight away and let
+ * the connection attempt find out.
+ */
+async function waitForAdvertisement(device: BluetoothDevice, signal: AbortSignal): Promise<void> {
+  // An abort that already happened won't fire its event again.
+  signal.throwIfAborted();
+  if (!device.watchAdvertisements) return;
+  const watch = new AbortController();
+  const stop = () => watch.abort();
+  signal.addEventListener('abort', stop);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      device.addEventListener('advertisementreceived', () => resolve(), { once: true, signal: watch.signal });
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      device.watchAdvertisements({ signal: watch.signal }).catch(() => resolve());
+    });
+  } finally {
+    signal.removeEventListener('abort', stop);
+    watch.abort();
+  }
 }

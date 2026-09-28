@@ -51,16 +51,37 @@ let selectedKey: string | null = null;
 
 // ---------------------------------------------------------------- connection
 
-/** Connect with the device chooser. With `hint`, then look for new sessions and offer them. */
-async function connectBle(hint = true): Promise<void> {
+/** The FlySight connected last, to reconnect without the device chooser. */
+interface RememberedDevice {
+  id: string;
+  name: string;
+}
+
+/** How long to look for the remembered FlySight before offering the chooser again. */
+const RECONNECT_TIMEOUT_MS = 30_000;
+
+/**
+ * Connect with the device chooser, or with `remembered` to the FlySight used
+ * last (falling back to the chooser when the browser can't). With `hint`,
+ * then look for new sessions and offer them. `chooseAnother` runs when the
+ * user picks a different FlySight while the remembered one is being looked for.
+ */
+async function connectBle(
+  hint = true,
+  remembered = false,
+  chooseAnother: () => void = () => void connectBle(hint),
+): Promise<void> {
   clearNotice();
-  setStatus('connecting', 'Choose your FlySight…');
   try {
-    const link = await BleLink.request();
+    const link = (remembered && (await reconnectRemembered(chooseAnother))) || (await chooseDevice());
+    if (!link) return;
     setStatus('connecting', `Connecting to ${link.name}…`);
     await startSession(link);
+    writeSetting('ble.lastDevice', JSON.stringify({ id: link.id, name: link.name } satisfies RememberedDevice));
     if (hint) void offerNewSessions();
   } catch (e) {
+    // Aborted: another attempt has taken over, or the notice already says why.
+    if (e instanceof DOMException && e.name === 'AbortError') return;
     setStatus('disconnected', 'Not connected');
     if (e instanceof DOMException && e.name === 'NotFoundError' && /cancel/i.test(e.message)) return;
     showNotice(
@@ -70,6 +91,53 @@ async function connectBle(hint = true): Promise<void> {
         '"tools/flysight_ble.py pair auto", then connect here.',
       true,
     );
+  }
+}
+
+async function chooseDevice(): Promise<BleLink> {
+  setStatus('connecting', 'Choose your FlySight…');
+  return BleLink.request();
+}
+
+/**
+ * Reconnect to the remembered FlySight without the chooser, waiting for it to
+ * wake up. Null when there is none or the browser can't; the notice offers the
+ * chooser meanwhile (a chooser needs a fresh tap, so it can't just follow a
+ * timeout).
+ */
+async function reconnectRemembered(chooseAnother: () => void): Promise<BleLink | null> {
+  let remembered: RememberedDevice;
+  try {
+    remembered = JSON.parse(readSetting('ble.lastDevice') ?? 'null');
+  } catch {
+    return null;
+  }
+  if (!remembered?.id) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error('timeout')), RECONNECT_TIMEOUT_MS);
+  setStatus('connecting', `Looking for ${remembered.name}…`);
+  showNotice(`Looking for ${remembered.name}. If it's asleep, press its button.`, false, undefined, {
+    label: 'Choose another FlySight',
+    run: () => {
+      controller.abort(new DOMException('Chose another', 'AbortError'));
+      chooseAnother();
+    },
+  });
+  try {
+    return await BleLink.reconnect(remembered.id, controller.signal);
+  } catch (e) {
+    if (controller.signal.reason instanceof Error && controller.signal.reason.message === 'timeout') {
+      setStatus('disconnected', 'Not connected');
+      showNotice(`${remembered.name} wasn't found nearby. Wake it with its button and try again.`, false, undefined, {
+        label: 'Choose another FlySight',
+        run: chooseAnother,
+      });
+      throw new DOMException('Not found', 'AbortError');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    if (!controller.signal.aborted) clearNotice();
   }
 }
 
@@ -283,11 +351,12 @@ async function offerNewSessions(): Promise<void> {
  * since the newest one downloaded from this FlySight (only the latest day the
  * first time), and open the newest jump.
  */
-async function getNewJumps(): Promise<void> {
+async function getNewJumps(chooser = false): Promise<void> {
   if (transfer) return;
   clearNotice();
   closeDrawerOnPhone();
-  if (!session) await connectBle(false);
+  // The FlySight used last, without the chooser; picking another carries on.
+  if (!session) await connectBle(false, !chooser, () => void getNewJumps(true));
   const s = session;
   if (!s || transfer) return;
 
