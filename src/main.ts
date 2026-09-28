@@ -32,6 +32,10 @@ const ui = {
   entries: byId('entries'),
   library: byId('library'),
   viewer: byId('viewer'),
+  menu: byId<HTMLButtonElement>('menu'),
+  more: byId<HTMLButtonElement>('more'),
+  connection: byId('connection'),
+  scrim: byId('scrim'),
 };
 
 let session: Session | null = null;
@@ -257,6 +261,7 @@ async function download(path: string, entry: Pick<DirEntry, 'size' | 'modified'>
   const controller = new AbortController();
   transfer = controller;
   selectedKey = store.fileKey(s.deviceId, path);
+  closeDrawerOnPhone();
   renderEntries();
   renderLibrary();
 
@@ -350,6 +355,7 @@ function renderTransfer(path: string, size: number, cancel: () => void): (bytes:
 async function openCached(meta: store.StoredFileMeta): Promise<void> {
   if (transfer) return;
   selectedKey = meta.key;
+  closeDrawerOnPhone();
   renderEntries();
   renderLibrary();
   try {
@@ -466,6 +472,7 @@ async function openLocalFile(file: File): Promise<void> {
     warnings.push(`Could not keep the file in the browser: ${errorMessage(e)}`);
   }
   selectedKey = meta.key;
+  closeDrawerOnPhone();
   renderLibrary();
   showFile(meta, data, `Opened ${file.name}`, warnings);
 }
@@ -551,8 +558,18 @@ function cachedMatch(path: string, size: number): boolean {
 
 // ---------------------------------------------------------------- misc
 
-function showNotice(message: string, error = false): void {
-  ui.notice.textContent = message;
+/**
+ * Show a notice with a close button. With `rememberAs`, closing it is
+ * remembered and the notice isn't shown again.
+ */
+function showNotice(message: string, error = false, rememberAs?: string): void {
+  if (rememberAs && readSetting(rememberAs)) return;
+  const close = h('button', { class: 'icon notice-close', title: 'Dismiss', 'aria-label': 'Dismiss' }, '×');
+  close.onclick = () => {
+    if (rememberAs) writeSetting(rememberAs, 'dismissed');
+    clearNotice();
+  };
+  fill(ui.notice, h('span', {}, message), close);
   ui.notice.classList.toggle('error', error);
   ui.notice.hidden = false;
 }
@@ -560,6 +577,73 @@ function showNotice(message: string, error = false): void {
 function clearNotice(): void {
   ui.notice.hidden = true;
 }
+
+function readSetting(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeSetting(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Not remembered; fine for this visit.
+  }
+}
+
+// ---------------------------------------------------------------- phone layout
+
+/** Matches the CSS breakpoint where the sidebar becomes a drawer. */
+const compact = matchMedia('(max-width: 900px), (orientation: landscape) and (max-height: 500px)');
+
+function setDrawer(open: boolean): void {
+  document.body.classList.toggle('drawer-open', open);
+  ui.scrim.hidden = !open;
+  ui.menu.setAttribute('aria-expanded', String(open));
+}
+
+/** After picking a file on a phone, get the file list out of the way. */
+function closeDrawerOnPhone(): void {
+  if (compact.matches) setDrawer(false);
+}
+
+function setMoreMenu(open: boolean): void {
+  ui.connection.classList.toggle('open', open);
+  ui.more.setAttribute('aria-expanded', String(open));
+}
+
+ui.menu.addEventListener('click', () => setDrawer(!document.body.classList.contains('drawer-open')));
+ui.scrim.addEventListener('click', () => setDrawer(false));
+{
+  // Swipe the drawer left to close it.
+  const sidebar = document.querySelector<HTMLElement>('.sidebar')!;
+  let startX: number | null = null;
+  sidebar.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'mouse') startX = e.clientX;
+  });
+  sidebar.addEventListener('pointerup', (e) => {
+    if (startX !== null && e.clientX - startX < -60) setDrawer(false);
+    startX = null;
+  });
+  sidebar.addEventListener('pointercancel', () => (startX = null));
+}
+ui.more.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setMoreMenu(!ui.connection.classList.contains('open'));
+});
+// Any choice in the menu, or a click elsewhere, closes it.
+document.addEventListener('click', (e) => {
+  if (!ui.connection.contains(e.target as Node) || (e.target as HTMLElement).closest('button')) setMoreMenu(false);
+});
+compact.addEventListener('change', () => {
+  setDrawer(false);
+  setMoreMenu(false);
+});
+// With nothing open yet, a phone starts on the file list.
+if (compact.matches && ui.viewer.querySelector('.placeholder')) setDrawer(true);
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -618,7 +702,9 @@ if (!isWebBluetoothAvailable()) {
   showNotice(
     'Web Bluetooth is not available in this browser. Use Chrome or Edge (desktop or Android) on https or ' +
       'localhost; on Linux you may need chrome://flags/#enable-experimental-web-platform-features. ' +
-      'Downloaded files and "Simulate from folder" still work.',
+      'Downloaded files, "Open file" and "Simulate from folder" still work.',
+    false,
+    'notice.noBluetooth',
   );
 }
 void refreshLibrary();

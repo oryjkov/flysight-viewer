@@ -74,7 +74,7 @@ export function jumpView(track: Track): HTMLElement {
   const rangeInput = h('input', { type: 'range', min: '100', max: '3000', step: '50' });
   const rangeValue = h('span', { class: 'range-value' });
   const speedLegend = h('span', { class: 'ramp-legend' });
-  const polarCanvas = h('canvas', { class: 'plot plot-square' });
+  const polarCanvas = h('canvas', { class: 'plot plot-polar' });
   const timeCanvas = h('canvas', { class: 'plot plot-time' });
   const timeLegend = h('span', { class: 'legend' });
   const cropInput = h('input', { type: 'checkbox', checked: true });
@@ -199,7 +199,12 @@ export function jumpView(track: Track): HTMLElement {
     const copy = h('button', { class: 'icon copy', title: 'Copy coordinates' }, '⧉');
     copy.onclick = () => void navigator.clipboard?.writeText(`${lat}, ${lon}`);
     head.replaceChildren(
-      h('h3', { class: 'jump-title' }, isoTime(track, exitIndex)),
+      h(
+        'h3',
+        { class: 'jump-title', title: isoTime(track, exitIndex) },
+        h('span', { class: 'iso' }, isoTime(track, exitIndex)),
+        h('span', { class: 'local' }, when.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })),
+      ),
       h(
         'div',
         { class: 'jump-sub' },

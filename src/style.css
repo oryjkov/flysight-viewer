@@ -92,11 +92,27 @@ a {
   font-size: 17px;
   margin: 0;
 }
+.topbar-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .connection {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+.menu-button,
+.more-button {
+  display: none;
+  font-size: 18px;
+  line-height: 1;
+  padding: 8px 12px;
+}
+.scrim[hidden] {
+  display: none;
 }
 .status {
   color: var(--muted);
@@ -115,11 +131,28 @@ a {
 }
 
 .notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
   margin: 12px 20px 0;
   padding: 10px 14px;
   border-radius: 6px;
   background: var(--warn-bg);
   color: var(--warn-text);
+}
+.notice[hidden] {
+  display: none;
+}
+.notice span {
+  flex: 1;
+}
+.notice .notice-close {
+  padding: 0 8px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1.2;
 }
 .notice.error {
   background: var(--err-bg);
@@ -132,12 +165,6 @@ a {
   gap: 16px;
   padding: 16px 20px;
   align-items: start;
-}
-@media (max-width: 800px) {
-  .layout {
-    grid-template-columns: 1fr;
-    padding: 12px 16px;
-  }
 }
 .sidebar {
   display: flex;
@@ -591,9 +618,13 @@ canvas.plot {
   width: 100%;
   --chart-surface: var(--panel);
 }
-.plot-square {
+.plot-square,
+.plot-polar {
   aspect-ratio: 1 / 1;
   max-height: 560px;
+}
+.jump-title .local {
+  display: none;
 }
 .plot-time {
   height: 360px;
@@ -652,4 +683,184 @@ canvas.plot {
 .file-details > summary {
   cursor: pointer;
   color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- phones and small tablets */
+
+/* Keep in sync with `compact` in main.ts. */
+@media (max-width: 900px), (orientation: landscape) and (max-height: 500px) {
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 8px max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+  }
+  .topbar h1 {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .menu-button,
+  .more-button {
+    display: inline-block;
+  }
+  .topbar-right {
+    flex-wrap: nowrap;
+  }
+  .status {
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  /* Connect, Simulate, Open file… live in the ⋯ menu. */
+  .connection {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: max(8px, env(safe-area-inset-right));
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 220px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  }
+  .connection.open {
+    display: flex;
+  }
+  .connection button {
+    padding: 10px 14px;
+    text-align: left;
+  }
+
+  .notice {
+    margin: 8px max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .layout {
+    display: block;
+    padding: 8px max(8px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+  }
+
+  /* The sidebar becomes a drawer from the left. */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    width: min(88vw, 400px);
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--bg);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
+    transform: translateX(-105%);
+    transition: transform 0.2s ease;
+  }
+  .drawer-open .sidebar {
+    transform: none;
+  }
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    background: rgba(0, 0, 0, 0.4);
+  }
+  .entry {
+    min-height: 44px;
+  }
+
+  .viewer {
+    padding: 12px 10px;
+    border-radius: 8px;
+  }
+
+  /* Jump view */
+  .viewer .jump-title {
+    font-family: inherit;
+    font-size: 19px;
+  }
+  .jump-title .iso {
+    display: none;
+  }
+  .jump-title .local {
+    display: inline;
+  }
+  .jump-sub {
+    gap: 2px 10px;
+    font-size: 13px;
+  }
+  .jump-sub > span:first-child {
+    display: none;
+  }
+  /* No wrapping: a wrapping column is as wide as its widest item, and the
+     tile strip's full width would widen the page. */
+  .jump-bar {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .tiles {
+    min-width: 0;
+  }
+  .tiles {
+    flex-wrap: nowrap;
+    margin: 0 -10px;
+    padding: 0 10px 2px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+  .tile {
+    flex: none;
+    min-width: 0;
+    padding: 6px 12px;
+    scroll-snap-align: start;
+  }
+  .tile-value {
+    font-size: 16px;
+    white-space: nowrap;
+  }
+  .jump-bar-right button {
+    min-height: 40px;
+  }
+  .jump-charts {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .jump-view {
+    gap: 10px;
+  }
+  .card {
+    padding: 8px 6px;
+  }
+  .card-head {
+    padding: 0 4px;
+  }
+  .legend-item {
+    min-height: 36px;
+    padding: 4px 8px;
+  }
+  .range input {
+    width: 140px;
+    height: 32px;
+  }
+  .plot-polar {
+    aspect-ratio: 4 / 3;
+  }
+  .plot-time {
+    height: clamp(260px, 45dvh, 380px);
+  }
 }
