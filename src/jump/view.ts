@@ -556,14 +556,25 @@ export function jumpView(track: Track): HTMLElement {
     p.canvas.addEventListener('pointerleave', (e) => {
       if (e.pointerType === 'mouse') setHover(null);
     });
-    for (const type of ['pointerup', 'pointercancel'] as const) {
-      p.canvas.addEventListener(type, () => root.classList.remove('scrubbing'));
-    }
+    p.canvas.addEventListener('pointerup', () => root.classList.remove('scrubbing'));
+    // The browser took the touch over to scroll the page: it wasn't a scrub.
+    p.canvas.addEventListener('pointercancel', () => {
+      root.classList.remove('scrubbing');
+      setHover(null);
+    });
   }
   document.addEventListener('pointerdown', (e) => {
     if (!root.isConnected || state.hover === null) return;
     if (!(e.target as HTMLElement).closest?.('canvas.plot')) setHover(null);
   });
+  // The tooltip is fixed to the screen, so a reading can't outlive a scroll.
+  addEventListener(
+    'scroll',
+    () => {
+      if (root.isConnected && state.hover !== null) setHover(null);
+    },
+    { passive: true },
+  );
 
   // ------------------------------------------------------------ controls
 
