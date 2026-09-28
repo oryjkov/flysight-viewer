@@ -13,9 +13,12 @@
       <h1>FlySight Viewer</h1>
       <div class="topbar-right">
         <span id="status" class="status" data-state="disconnected">Not connected</span>
+        <button id="sync" class="primary sync-button" title="Connect and download the sessions recorded since your newest download">
+          Get new jumps
+        </button>
         <button id="more" class="icon more-button" title="More" aria-label="More" aria-expanded="false">⋯</button>
       <div id="connection" class="connection">
-        <button id="connect" class="primary">Connect FlySight</button>
+        <button id="connect" title="Connect to browse the FlySight's files">Connect FlySight</button>
         <button id="simulate" hidden title="Serve a copy of the SD card through the simulated BLE protocol">
           Simulate from folder…
         </button>

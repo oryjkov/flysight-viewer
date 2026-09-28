@@ -6,8 +6,10 @@ import { BleLink, isWebBluetoothAvailable } from './ble/transport';
 import { fakeFsFromFiles } from './demo/folder';
 import { ATTR_HIDDEN, ATTR_SYSTEM, joinPath, parentPath } from './fs/fat';
 import { formatBytes, formatDuration, summarize, type Summary } from './parse/summary';
+import { segment } from './classify/segment';
 import { jumpView } from './jump/view';
 import * as store from './storage';
+import { findNewSessions, type NewSession } from './sync';
 import { parseTrack } from './track/track';
 import { byId, fill, h } from './ui/dom';
 
@@ -20,6 +22,7 @@ interface Session {
 const ui = {
   status: byId('status'),
   connect: byId<HTMLButtonElement>('connect'),
+  sync: byId<HTMLButtonElement>('sync'),
   simulate: byId<HTMLButtonElement>('simulate'),
   disconnect: byId<HTMLButtonElement>('disconnect'),
   install: byId<HTMLButtonElement>('install'),
@@ -48,13 +51,15 @@ let selectedKey: string | null = null;
 
 // ---------------------------------------------------------------- connection
 
-async function connectBle(): Promise<void> {
+/** Connect with the device chooser. With `hint`, then look for new sessions and offer them. */
+async function connectBle(hint = true): Promise<void> {
   clearNotice();
   setStatus('connecting', 'Choose your FlySight…');
   try {
     const link = await BleLink.request();
     setStatus('connecting', `Connecting to ${link.name}…`);
     await startSession(link);
+    if (hint) void offerNewSessions();
   } catch (e) {
     setStatus('disconnected', 'Not connected');
     if (e instanceof DOMException && e.name === 'NotFoundError' && /cancel/i.test(e.message)) return;
@@ -77,6 +82,7 @@ async function simulateFromFolder(files: FileList): Promise<void> {
   const link = new FakeFlySight(fakeFsFromFiles(files), { name: `Simulated · ${folder}`, packetIntervalMs: 1 });
   try {
     await startSession(link);
+    void offerNewSessions();
   } catch (e) {
     showNotice(`Simulation failed: ${errorMessage(e)}`, true);
   }
@@ -110,6 +116,7 @@ function updateConnectionUi(): void {
   // A development aid for testing without a FlySight: `npm run dev` only.
   ui.simulate.hidden = connected || !import.meta.env.DEV;
   ui.disconnect.hidden = !connected;
+  ui.sync.disabled = transfer !== null || (!connected && !isWebBluetoothAvailable());
   ui.refresh.hidden = !connected;
 }
 
@@ -245,6 +252,165 @@ function friendlyLabel(entry: DirEntry, dir: string): string | null {
 
 function isTempPath(path: string): boolean {
   return path.toUpperCase().startsWith('/TEMP/');
+}
+
+// ---------------------------------------------------------------- get new jumps
+
+/** Paths already downloaded from the connected FlySight. */
+function cachedPaths(deviceId: string): string[] {
+  return library.filter((m) => m.deviceId === deviceId).map((m) => m.path);
+}
+
+/** After a plain connect: point out sessions newer than the last download. */
+async function offerNewSessions(): Promise<void> {
+  const s = session;
+  if (!s) return;
+  try {
+    const found = await findNewSessions(s.client, cachedPaths(s.deviceId));
+    if (session !== s || transfer || !found.length) return;
+    const n = found.length;
+    showNotice(`${n} new session${n === 1 ? '' : 's'} on ${s.deviceName}.`, false, undefined, {
+      label: 'Get them',
+      run: () => void getNewJumps(),
+    });
+  } catch {
+    // Just a hint; browsing still works.
+  }
+}
+
+/**
+ * Connect if needed, then download the TRACK.CSV of every session recorded
+ * since the newest one downloaded from this FlySight (only the latest day the
+ * first time), and open the newest jump.
+ */
+async function getNewJumps(): Promise<void> {
+  if (transfer) return;
+  clearNotice();
+  closeDrawerOnPhone();
+  if (!session) await connectBle(false);
+  const s = session;
+  if (!s || transfer) return;
+
+  const controller = new AbortController();
+  transfer = controller;
+  ui.sync.disabled = true;
+  const wakeLock = await acquireWakeLock();
+  const view = renderSync(s.deviceName, () => controller.abort());
+  try {
+    const found = await findNewSessions(s.client, cachedPaths(s.deviceId));
+    if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+    if (!found.length) {
+      view.finish(`No new sessions: everything on ${s.deviceName} up to the newest session is already here.`);
+      return;
+    }
+    const rows = view.list(found);
+    let newest: { meta: store.StoredFileMeta; data: Uint8Array } | null = null;
+    for (const [i, item] of found.entries()) {
+      view.status(`Downloading ${i + 1} of ${found.length}…`);
+      const data = await s.client.readFile(item.path, { signal: controller.signal, onProgress: rows[i].progress });
+      const meta: store.StoredFileMeta = {
+        key: store.fileKey(s.deviceId, item.path),
+        deviceId: s.deviceId,
+        deviceName: s.deviceName,
+        path: item.path,
+        size: data.length,
+        modified: item.track.modified,
+        downloadedAt: Date.now(),
+      };
+      await store.saveFile(meta, data);
+      await refreshLibrary();
+      const jumps = countJumps(data);
+      rows[i].done(jumps === 0 ? 'no jump' : jumps === 1 ? '1 jump' : `${jumps} jumps`);
+      if (jumps > 0 || !newest) newest = { meta, data };
+    }
+    // Open the newest session with a jump (or the newest at all).
+    selectedKey = newest!.meta.key;
+    renderLibrary();
+    showFile(newest!.meta, newest!.data, `${found.length} new session${found.length === 1 ? '' : 's'} downloaded`);
+  } catch (e) {
+    const cancelled = e instanceof DOMException && e.name === 'AbortError';
+    view.finish(
+      cancelled
+        ? 'Cancelled. Sessions downloaded so far are kept; Get new jumps continues from there.'
+        : `Stopped: ${errorMessage(e)}. Sessions downloaded so far are kept; Get new jumps continues from there.`,
+      !cancelled,
+    );
+  } finally {
+    wakeLock?.release().catch(() => {});
+    transfer = null;
+    updateConnectionUi();
+    renderEntries();
+  }
+}
+
+function countJumps(data: Uint8Array): number {
+  try {
+    return segment(parseTrack(data)).length;
+  } catch {
+    return 0;
+  }
+}
+
+/** Progress view for Get new jumps. */
+function renderSync(deviceName: string, cancel: () => void) {
+  const statusText = h('div', { class: 'progress-text' }, 'Looking for new sessions…');
+  const list = h('ul', { class: 'sync-list' });
+  const cancelButton = h('button', { onclick: cancel }, 'Cancel');
+  fill(
+    ui.viewer,
+    h('h3', {}, 'Get new jumps'),
+    h('div', { class: 'kind' }, `From ${deviceName}`),
+    statusText,
+    list,
+    h('div', { class: 'actions' }, cancelButton),
+  );
+  return {
+    status(text: string) {
+      statusText.textContent = text;
+    },
+    finish(text: string, error = false) {
+      statusText.textContent = text;
+      statusText.classList.toggle('error-text', error);
+      cancelButton.remove();
+    },
+    list(found: NewSession[]) {
+      return found.map((f) => {
+        const bar = h('div');
+        const result = h('span', { class: 'sync-result' }, formatBytes(f.track.size));
+        list.append(
+          h(
+            'li',
+            {},
+            h('span', { class: 'sync-name' }, sessionLabel(f.dir)),
+            result,
+            h('div', { class: 'progress' }, bar),
+          ),
+        );
+        return {
+          progress: (bytes: number) => {
+            bar.style.width = `${Math.min(100, (bytes / Math.max(1, f.track.size)) * 100)}%`;
+          },
+          done: (text: string) => {
+            bar.style.width = '100%';
+            result.textContent = `✓ ${text}`;
+          },
+        };
+      });
+    },
+  };
+}
+
+/** "/26-09-26/13-34-06" → "Sat 26 Sep · 13:34:06" (the FlySight's local time). */
+function sessionLabel(dir: string): string {
+  const [date, time] = dir.split('/').filter(Boolean);
+  const [y, mo, d] = date.split('-').map(Number);
+  const day = new Date(Date.UTC(2000 + y, mo - 1, d)).toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+  return `${day} · ${time.replaceAll('-', ':')}`;
 }
 
 // ---------------------------------------------------------------- downloads
@@ -563,14 +729,28 @@ function cachedMatch(path: string, size: number): boolean {
  * Show a notice with a close button. With `rememberAs`, closing it is
  * remembered and the notice isn't shown again.
  */
-function showNotice(message: string, error = false, rememberAs?: string): void {
+function showNotice(
+  message: string,
+  error = false,
+  rememberAs?: string,
+  action?: { label: string; run: () => void },
+): void {
   if (rememberAs && readSetting(rememberAs)) return;
   const close = h('button', { class: 'icon notice-close', title: 'Dismiss', 'aria-label': 'Dismiss' }, '×');
   close.onclick = () => {
     if (rememberAs) writeSetting(rememberAs, 'dismissed');
     clearNotice();
   };
-  fill(ui.notice, h('span', {}, message), close);
+  const act =
+    action &&
+    h('button', { class: 'primary notice-action' }, action.label);
+  if (act) {
+    act.onclick = () => {
+      clearNotice();
+      action.run();
+    };
+  }
+  fill(ui.notice, h('span', {}, message), act, close);
   ui.notice.classList.toggle('error', error);
   ui.notice.hidden = false;
 }
@@ -673,6 +853,7 @@ function errorMessage(e: unknown): string {
 }
 
 ui.connect.addEventListener('click', () => void connectBle());
+ui.sync.addEventListener('click', () => void getNewJumps());
 ui.simulate.addEventListener('click', () => ui.folderInput.click());
 ui.openFile.addEventListener('click', () => ui.fileInput.click());
 ui.fileInput.addEventListener('change', () => {

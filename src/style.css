@@ -114,6 +114,38 @@ a {
 .scrim[hidden] {
   display: none;
 }
+.sync-list {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  max-width: 560px;
+}
+.sync-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.sync-name {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+}
+.sync-result {
+  color: var(--muted);
+  font-size: 13px;
+}
+.sync-list .progress {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+}
+.error-text {
+  color: var(--err-text);
+}
+.notice .notice-action {
+  padding: 2px 10px;
+}
 .status {
   color: var(--muted);
   margin-right: 4px;
@@ -722,6 +754,15 @@ canvas.plot {
   }
   .status {
     font-size: 12px;
+    white-space: nowrap;
+  }
+  /* The Get new jumps button says enough while not connected. */
+  .status[data-state='disconnected'] {
+    display: none;
+  }
+  .sync-button {
+    padding: 7px 10px;
+    font-size: 13px;
     white-space: nowrap;
   }
 
