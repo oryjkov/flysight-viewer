@@ -472,6 +472,7 @@ pre.preview {
   gap: 4px;
 }
 .jump-tabs button[aria-pressed='true'],
+.density[aria-pressed='true'],
 .units {
   background: var(--accent);
   border-color: var(--accent);

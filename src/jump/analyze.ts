@@ -6,6 +6,29 @@ import type { JumpLabel, MarkerName } from '../labels/schema';
 import { derive, indexOfTime, nearestIndex, type Derived, type Track } from '../track/track';
 
 const EARTH_RADIUS = 6371008.8;
+/** ISA sea-level air density, kg/m³. */
+export const SEA_LEVEL_DENSITY = 1.225;
+
+/** Earth radius used by the standard atmosphere for geopotential height, m. */
+const ISA_EARTH_RADIUS = 6356766;
+
+/**
+ * ISA air density at a (geometric, GPS) height above mean sea level, kg/m³.
+ * Troposphere model, valid below 11 km; the height is converted to the
+ * geopotential height the standard atmosphere is defined on.
+ */
+export function isaDensity(altitude: number): number {
+  const h = (ISA_EARTH_RADIUS * altitude) / (ISA_EARTH_RADIUS + altitude);
+  return SEA_LEVEL_DENSITY * Math.pow(1 - 2.25577e-5 * h, 4.2559);
+}
+
+/**
+ * Factor turning a speed at `altitude` into the speed with the same drag at
+ * ISA sea level: drag ∝ ρv², so v_sl = v·√(ρ/ρ_sl).
+ */
+export function seaLevelFactor(altitude: number): number {
+  return Math.sqrt(isaDensity(altitude) / SEA_LEVEL_DENSITY);
+}
 
 export interface Jump {
   label: JumpLabel;
@@ -55,6 +78,8 @@ export interface JumpSeries {
   distance: Float64Array;
   /** Straight-line horizontal distance from the exit point, m. */
   fromExit: Float64Array;
+  /** seaLevelFactor at each sample's altitude. */
+  seaLevel: Float64Array;
   /** Height lost since exit, m. */
   drop: Float64Array;
   /** Track index of the first series sample. */
@@ -135,6 +160,7 @@ function series(track: Track, d: Derived, start: number, end: number, ground: nu
     glide: new Float64Array(n),
     distance: new Float64Array(n),
     fromExit: new Float64Array(n),
+    seaLevel: new Float64Array(n),
     drop: new Float64Array(n),
     offset: start,
   };
@@ -143,6 +169,7 @@ function series(track: Track, d: Derived, start: number, end: number, ground: nu
     const i = start + k;
     s.t[k] = track.t[i] - track.t[start];
     s.agl[k] = track.alt[i] - ground;
+    s.seaLevel[k] = seaLevelFactor(track.alt[i]);
     s.glide[k] = track.velD[i] > 0.5 ? d.velH[i] / track.velD[i] : NaN;
     // Equirectangular is plenty over a few kilometres.
     const dy = ((track.lat[i] - track.lat[start]) * Math.PI * EARTH_RADIUS) / 180;

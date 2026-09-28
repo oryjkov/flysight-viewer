@@ -47,6 +47,7 @@ export function jumpView(track: Track): HTMLElement {
   const state = {
     jump: 0,
     units: loadUnits(),
+    seaLevel: loadFlag('jump.seaLevel'),
     cropAtDeploy: true,
     profileRange: PROFILE_DEFAULT,
     hover: null as number | null,
@@ -57,6 +58,16 @@ export function jumpView(track: Track): HTMLElement {
   const head = h('div', { class: 'jump-head' });
   const tiles = h('div', { class: 'tiles' });
   const unitsButton = h('button', { class: 'units', title: 'Switch between km/h and m/s' });
+  const densityButton = h(
+    'button',
+    {
+      class: 'density',
+      title:
+        'Show speeds adjusted to sea-level air density (standard atmosphere): the speed with the same drag at sea level. ' +
+        'Glide ratio, heights and distances are unchanged; horizontal speeds still include wind.',
+    },
+    'Sea-level speeds',
+  );
   const tabs = h('div', { class: 'jump-tabs' });
 
   const profileCanvas = h('canvas', { class: 'plot plot-square' });
@@ -71,7 +82,7 @@ export function jumpView(track: Track): HTMLElement {
 
   root.append(
     head,
-    h('div', { class: 'jump-bar' }, tiles, h('div', { class: 'jump-bar-right' }, tabs, unitsButton)),
+    h('div', { class: 'jump-bar' }, tiles, h('div', { class: 'jump-bar-right' }, tabs, densityButton, unitsButton)),
     h(
       'div',
       { class: 'jump-charts' },
@@ -162,6 +173,22 @@ export function jumpView(track: Track): HTMLElement {
     return (j.deploy ?? j.end) - j.start;
   };
 
+  /** Speed multiplier at series index k: 1, or the sea-level factor when adjusting. */
+  const factor = (k: number): number => (state.seaLevel ? jump().series.seaLevel[k] : 1);
+
+  /** A speed series in display units, sea-level adjusted when the toggle is on. */
+  function shown(a: Float64Array, u: (typeof UNITS)[UnitSystem]): Float64Array {
+    return Float64Array.from(a, (v, k) => v * u.speed * factor(k));
+  }
+
+  /** Highest total speed from exit to deploy, m/s, as currently shown. */
+  function maxSpeed(): number {
+    const s = jump().series;
+    let max = 0;
+    for (let k = 0; k <= deployK(); k++) max = Math.max(max, s.speed[k] * factor(k));
+    return max;
+  }
+
   function renderHead(): void {
     const j = jump();
     const u = UNITS[state.units];
@@ -192,7 +219,7 @@ export function jumpView(track: Track): HTMLElement {
     tiles.replaceChildren(
       tile('Exit', s.exitAgl !== null ? `${len(s.exitAgl, u)} AGL` : '—'),
       tile('Freefall', s.freefallTime !== null ? duration(s.freefallTime) : '—'),
-      tile('Max speed', speed(s.maxSpeed, u)),
+      tile(state.seaLevel ? 'Max speed (sea level)' : 'Max speed', speed(maxSpeed(), u)),
       tile('Deploy alt', s.deployAgl !== null ? `${len(s.deployAgl, u)} AGL` : '—', true),
       tile('Canopy', s.canopyTime !== null ? duration(s.canopyTime) : '—'),
     );
@@ -215,6 +242,7 @@ export function jumpView(track: Track): HTMLElement {
         : []),
     );
     unitsButton.textContent = u.speedUnit;
+    densityButton.setAttribute('aria-pressed', String(state.seaLevel));
     rangeValue.textContent = len(state.profileRange, u);
     rangeInput.value = String(state.profileRange);
     const gradient = SPEED_STOPS.map(([f]) => `${speedColor(f * RAMP_MAX)} ${f * 100}%`).join(', ');
@@ -244,9 +272,9 @@ export function jumpView(track: Track): HTMLElement {
     const dk = deployK();
     const hover = state.hover;
     const scaled = (a: Float64Array, k: number) => Float64Array.from(a, (v) => v * k);
-    const vH = scaled(s.velH, u.speed);
-    const vD = scaled(s.velD, u.speed);
-    const total = scaled(s.speed, u.speed);
+    const vH = shown(s.velH, u);
+    const vD = shown(s.velD, u);
+    const total = shown(s.speed, u);
 
     // Drop vs distance flown: freefall only, until the chosen height is lost.
     const range = state.profileRange * u.length;
@@ -261,7 +289,7 @@ export function jumpView(track: Track): HTMLElement {
         y: scaled(s.drop, u.length),
         to: last,
         color: speedColor(0),
-        colorAt: (i) => speedColor(s.speed[i]),
+        colorAt: (i) => speedColor(s.speed[i] * factor(i)),
         width: 3,
       },
     ];
@@ -284,12 +312,12 @@ export function jumpView(track: Track): HTMLElement {
       maxVH = Math.max(maxVH, vH[k]);
     }
     const xMax = niceMax(maxVH, 10);
-    polar.x = { min: 0, max: xMax, title: `Horizontal (${u.speedUnit})` };
+    polar.x = { min: 0, max: xMax, title: `Horizontal (${u.speedUnit}${state.seaLevel ? ', sea level' : ''})` };
     // Above 0 only as far as the jumper actually climbed (flares, aircraft).
     polar.y = {
       min: minVD < -0.5 ? -niceMax(-minVD) : 0,
       max: niceMax(maxVD, 10),
-      title: `Vertical (${u.speedUnit})`,
+      title: `Vertical (${u.speedUnit}${state.seaLevel ? ', sea level' : ''})`,
       invert: true,
     };
     polar.refs = [1, 2, 3].map((k) => ({ x0: 0, y0: 0, x1: xMax, y1: xMax / k, label: `${k}:1` }));
@@ -327,7 +355,7 @@ export function jumpView(track: Track): HTMLElement {
     const aglMax = Math.max(1, inRange(s.agl)[1]);
     const elevation = Float64Array.from(s.agl, (v) => yMin + (v / aglMax) * (yMax - yMin));
     timePlot.x = time;
-    timePlot.y = { min: yMin, max: yMax, title: `Speed (${u.speedUnit})` };
+    timePlot.y = { min: yMin, max: yMax, title: `Speed (${u.speedUnit}${state.seaLevel ? ', sea level' : ''})` };
     timePlot.y2 = { min: 0, max: 4, title: 'Glide ratio' };
     const lines: Record<TimeKey, PlotLine> = {
       elevation: { x: s.t, y: elevation, to: end, color: c.ink, width: 1.5 },
@@ -367,9 +395,9 @@ export function jumpView(track: Track): HTMLElement {
       h('div', { class: 'tt-title' }, `${s.t[k].toFixed(1)} s from exit`),
       row('--chart-ink', 'Elevation', `${len(s.agl[k], u)} AGL`),
       row('--series-4', 'Glide ratio', Number.isFinite(s.glide[k]) ? s.glide[k].toFixed(2) : '—'),
-      row('--series-1', 'Total speed', speed(s.speed[k], u)),
-      row('--series-2', 'Horizontal', speed(s.velH[k], u)),
-      row('--series-3', 'Vertical', speed(s.velD[k], u)),
+      row('--series-1', 'Total speed', speed(s.speed[k] * factor(k), u)),
+      row('--series-2', 'Horizontal', speed(s.velH[k] * factor(k), u)),
+      row('--series-3', 'Vertical', speed(s.velD[k] * factor(k), u)),
       row(null, 'Distance flown', len(s.distance[k], u)),
       row(null, 'From exit', len(s.fromExit[k], u)),
     );
@@ -429,6 +457,11 @@ export function jumpView(track: Track): HTMLElement {
 
   // ------------------------------------------------------------ controls
 
+  densityButton.onclick = () => {
+    state.seaLevel = !state.seaLevel;
+    saveFlag('jump.seaLevel', state.seaLevel);
+    render();
+  };
   unitsButton.onclick = () => {
     state.units = state.units === 'kmh' ? 'ms' : 'kmh';
     saveUnits(state.units);
@@ -504,6 +537,22 @@ function loadUnits(): UnitSystem {
     return localStorage.getItem('jump.units') === 'ms' ? 'ms' : 'kmh';
   } catch {
     return 'kmh';
+  }
+}
+
+function loadFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === 'on';
+  } catch {
+    return false;
+  }
+}
+
+function saveFlag(key: string, on: boolean): void {
+  try {
+    localStorage.setItem(key, on ? 'on' : 'off');
+  } catch {
+    // Not remembered; applies to this view.
   }
 }
 

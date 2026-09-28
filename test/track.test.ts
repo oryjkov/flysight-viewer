@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CLASSIFIER_VERSION, segment } from '../src/classify/segment';
-import { analyzeJump } from '../src/jump/analyze';
+import { analyzeJump, isaDensity, seaLevelFactor } from '../src/jump/analyze';
 import { validateLabel } from '../src/labels/schema';
 import { clockOffset } from '../src/track/sensor';
 import { derive, G, indexOfTime, isoTime, parseTrack, type Track } from '../src/track/track';
@@ -47,6 +47,21 @@ describe('track', () => {
     expect(derive(terminal).drag[10]).toBeCloseTo(1);
     const falling = synthetic(20, (t) => ({ vD: G * t }));
     expect(derive(falling).drag[10]).toBeCloseTo(0);
+  });
+});
+
+describe('ISA density', () => {
+  it('matches the standard atmosphere table', () => {
+    expect(isaDensity(0)).toBeCloseTo(1.225, 3);
+    expect(isaDensity(1000)).toBeCloseTo(1.1117, 3);
+    expect(isaDensity(4000)).toBeCloseTo(0.8194, 3);
+    expect(isaDensity(10000)).toBeCloseTo(0.4135, 3);
+  });
+
+  it('scales speeds to sea level by √(ρ/ρ₀)', () => {
+    expect(seaLevelFactor(0)).toBeCloseTo(1, 6);
+    // 250 km/h at 4000 m has the drag of about 204 km/h at sea level.
+    expect(250 * seaLevelFactor(4000)).toBeCloseTo(204.5, 0);
   });
 });
 
