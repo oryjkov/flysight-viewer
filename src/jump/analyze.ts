@@ -48,8 +48,13 @@ export interface JumpSeries {
   speed: Float64Array;
   /** vH / vD; NaN while not descending. */
   glide: Float64Array;
-  /** Horizontal distance from the exit point, m. */
+  /**
+   * Horizontal distance flown since exit, m: horizontal speed integrated
+   * over time, so it keeps growing through turns.
+   */
   distance: Float64Array;
+  /** Straight-line horizontal distance from the exit point, m. */
+  fromExit: Float64Array;
   /** Height lost since exit, m. */
   drop: Float64Array;
   /** Track index of the first series sample. */
@@ -129,6 +134,7 @@ function series(track: Track, d: Derived, start: number, end: number, ground: nu
     speed: d.speed.slice(start, end + 1),
     glide: new Float64Array(n),
     distance: new Float64Array(n),
+    fromExit: new Float64Array(n),
     drop: new Float64Array(n),
     offset: start,
   };
@@ -141,7 +147,17 @@ function series(track: Track, d: Derived, start: number, end: number, ground: nu
     // Equirectangular is plenty over a few kilometres.
     const dy = ((track.lat[i] - track.lat[start]) * Math.PI * EARTH_RADIUS) / 180;
     const dx = ((track.lon[i] - track.lon[start]) * Math.PI * EARTH_RADIUS * Math.cos(lat0)) / 180;
-    s.distance[k] = Math.hypot(dx, dy);
+    s.fromExit[k] = Math.hypot(dx, dy);
+    if (k > 0) {
+      // Trapezoid over the speed; across a gap in the recording, fall back to
+      // the straight line between the positions either side.
+      const dt = track.t[i] - track.t[i - 1];
+      const step =
+        dt <= 1
+          ? ((d.velH[i] + d.velH[i - 1]) / 2) * dt
+          : Math.max(0, s.fromExit[k] - s.fromExit[k - 1]) || 0;
+      s.distance[k] = s.distance[k - 1] + step;
+    }
     s.drop[k] = track.alt[start] - track.alt[i];
   }
   return s;

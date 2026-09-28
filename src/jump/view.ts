@@ -1,6 +1,6 @@
 /**
  * Jump view: the classifier finds the jumps in a track, and each is shown
- * from exit to landing — header, stat tiles, start profile, velocity polar
+ * from exit to landing — header, stat tiles, drop vs distance flown, velocity polar
  * and time charts, with a shared hover cursor.
  */
 import { segment } from '../classify/segment';
@@ -17,7 +17,7 @@ const UNITS: Record<UnitSystem, { speed: number; speedUnit: string; length: numb
 };
 
 /**
- * Speed colour scale for the start profile: dark blue when slow, through
+ * Speed colour scale for the drop profile: dark blue when slow, through
  * cyan, yellow and orange, to red at RAMP_MAX and above.
  */
 const SPEED_STOPS: [number, [number, number, number]][] = [
@@ -80,7 +80,7 @@ export function jumpView(track: Track): HTMLElement {
         h(
           'div',
           { class: 'card-head' },
-          h('h4', {}, 'Start profile'),
+          h('h4', {}, 'Drop vs distance flown'),
           h('label', { class: 'range', title: 'Height of the profile from exit' }, rangeInput, rangeValue),
           speedLegend,
         ),
@@ -247,11 +247,11 @@ export function jumpView(track: Track): HTMLElement {
     const vD = scaled(s.velD, u.speed);
     const total = scaled(s.speed, u.speed);
 
-    // Start profile: freefall only, until the chosen height is lost.
+    // Drop vs distance flown: freefall only, until the chosen height is lost.
     const range = state.profileRange * u.length;
     let last = 0;
     while (last < dk && s.drop[last + 1] <= state.profileRange * 1.02) last++;
-    profile.x = { min: 0, max: range, title: `Horizontal distance (${u.lengthUnit})` };
+    profile.x = { min: 0, max: range, title: `Horizontal distance flown (${u.lengthUnit})` };
     profile.y = { min: 0, max: range, title: `Vertical drop (${u.lengthUnit})`, invert: true };
     profile.refs = [{ x0: 0, y0: 0, x1: range, y1: range, label: '1:1' }];
     profile.lines = [
@@ -363,7 +363,8 @@ export function jumpView(track: Track): HTMLElement {
       row('--series-1', 'Total speed', speed(s.speed[k], u)),
       row('--series-2', 'Horizontal', speed(s.velH[k], u)),
       row('--series-3', 'Vertical', speed(s.velD[k], u)),
-      row(null, 'Distance', len(s.distance[k], u)),
+      row(null, 'Distance flown', len(s.distance[k], u)),
+      row(null, 'From exit', len(s.fromExit[k], u)),
     );
     tooltip.hidden = false;
     const r = tooltip.getBoundingClientRect();
@@ -457,7 +458,7 @@ function colors(el: HTMLElement): Record<'series1' | 'series2' | 'series3' | 'se
   };
 }
 
-/** Colour for a speed in m/s on the start profile's scale. */
+/** Colour for a speed in m/s on the drop profile's scale. */
 function speedColor(ms: number): string {
   const f = Math.round(Math.min(1, Math.max(0, ms / RAMP_MAX)) * SPEED_STEPS) / SPEED_STEPS;
   let k = 1;

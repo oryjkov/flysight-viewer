@@ -91,7 +91,10 @@ describe('segment', () => {
     const s = jump.series;
     expect(s.t[0]).toBe(0);
     expect(s.drop[0]).toBe(0);
-    expect(s.distance[s.t.length - 1]).toBeGreaterThan(300);
+    // Straight canopy flight north at 6 m/s: distance flown and from exit agree.
+    const last = s.t.length - 1;
+    expect(s.distance[last]).toBeGreaterThan(300);
+    expect(s.distance[last]).toBeCloseTo(s.fromExit[last], -1);
   });
 
   it('finds no jump in a track without freefall', () => {
