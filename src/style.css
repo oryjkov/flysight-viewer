@@ -161,6 +161,22 @@ a {
 .status[data-state='connecting']::before {
   color: var(--accent);
 }
+.status .battery {
+  margin-left: 8px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.status .battery::before {
+  content: '▮ ';
+  font-size: 10px;
+}
+.status .battery.low {
+  border-color: var(--err-text);
+  color: var(--err-text);
+}
 
 .notice {
   display: flex;

@@ -2,15 +2,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BleLink, CRS_SERVICE } from '../src/ble/transport';
 
 /** Minimal stand-in for a Web Bluetooth device that can advertise and connect. */
-function fakeDevice(id: string, opts: { watch?: boolean } = {}) {
+function fakeDevice(id: string, opts: { watch?: boolean; battery?: number } = {}) {
   const target = new EventTarget();
   const characteristic = () =>
     Object.assign(new EventTarget(), {
       startNotifications: vi.fn(async () => {}),
       writeValueWithoutResponse: vi.fn(async () => {}),
     });
+  // Battery Level characteristic: readable, and notifies via `setBattery`.
+  const batteryLevel = Object.assign(new EventTarget(), {
+    value: undefined as DataView | undefined,
+    readValue: vi.fn(async () => new DataView(new Uint8Array([opts.battery ?? 0]).buffer)),
+    startNotifications: vi.fn(async () => {}),
+  });
   const server = {
     getPrimaryService: vi.fn(async (uuid: string) => {
+      if (uuid === 'battery_service') {
+        if (opts.battery === undefined) throw new DOMException('No battery service', 'NotFoundError');
+        return { getCharacteristic: vi.fn(async () => batteryLevel) };
+      }
       expect(uuid).toBe(CRS_SERVICE);
       return { getCharacteristic: vi.fn(async () => characteristic()) };
     }),
@@ -22,6 +32,10 @@ function fakeDevice(id: string, opts: { watch?: boolean } = {}) {
     gatt: { connect: vi.fn(async () => server), disconnect: vi.fn() },
     watchAdvertisements: opts.watch === false ? undefined : vi.fn(async () => {}),
     advertise: () => target.dispatchEvent(new Event('advertisementreceived')),
+    setBattery: (percent: number) => {
+      batteryLevel.value = new DataView(new Uint8Array([percent]).buffer);
+      batteryLevel.dispatchEvent(new Event('characteristicvaluechanged'));
+    },
   });
   return device;
 }
@@ -68,5 +82,34 @@ describe('reconnecting to the remembered FlySight', () => {
     controller.abort(new DOMException('Chose another', 'AbortError'));
     await expect(pending).rejects.toThrow('Chose another');
     expect(device.gatt.connect).not.toHaveBeenCalled();
+  });
+});
+
+describe('battery level', () => {
+  const connect = async (device: ReturnType<typeof fakeDevice>) => {
+    installBluetooth([device]);
+    return (await BleLink.reconnect(device.id, new AbortController().signal))!;
+  };
+
+  it('reads the level and follows notifications', async () => {
+    const device = fakeDevice('a', { watch: false, battery: 83 });
+    const link = await connect(device);
+    expect(link.battery).toBe(83);
+    const changed = vi.fn();
+    link.onBattery = changed;
+    device.setBattery(82);
+    expect(link.battery).toBe(82);
+    expect(changed).toHaveBeenCalledOnce();
+  });
+
+  it('treats 0 as not measured yet', async () => {
+    const link = await connect(fakeDevice('a', { watch: false, battery: 0 }));
+    expect(link.battery).toBeNull();
+  });
+
+  it('has no battery on firmware without the service, and still connects', async () => {
+    const link = await connect(fakeDevice('a', { watch: false }));
+    expect(link.battery).toBeUndefined();
+    expect(link.name).toBe('FlySight 2');
   });
 });

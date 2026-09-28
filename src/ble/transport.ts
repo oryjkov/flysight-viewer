@@ -15,6 +15,8 @@ export function isWebBluetoothAvailable(): boolean {
 export class BleLink implements Link {
   onPacket: ((data: Uint8Array) => void) | null = null;
   onDisconnect: (() => void) | null = null;
+  battery: number | null | undefined = undefined;
+  onBattery: (() => void) | null = null;
 
   private writeChain: Promise<void> = Promise.resolve();
   private closed = false;
@@ -37,7 +39,7 @@ export class BleLink implements Link {
   static async request(): Promise<BleLink> {
     const device = await navigator.bluetooth.requestDevice({
       filters: [{ manufacturerData: [{ companyIdentifier: FLYSIGHT_COMPANY_ID }] }],
-      optionalServices: [CRS_SERVICE],
+      optionalServices: [CRS_SERVICE, 'battery_service'],
     });
     return BleLink.connect(device);
   }
@@ -71,6 +73,7 @@ export class BleLink implements Link {
       // The characteristics require an encrypted link, so this is where the
       // OS pairs with the FlySight if it has not already.
       await tx.startNotifications();
+      await link.watchBattery(server);
       return link;
     } catch (e) {
       server.disconnect();
@@ -90,6 +93,32 @@ export class BleLink implements Link {
 
   disconnect(): void {
     this.device.gatt?.disconnect();
+  }
+
+  /**
+   * Standard Battery Service (develop firmware): read the level and follow
+   * its notifications. Absent on release firmware, and not allowed for a
+   * FlySight that was chosen before the app asked for it — both just leave
+   * `battery` undefined.
+   */
+  private async watchBattery(server: BluetoothRemoteGATTServer): Promise<void> {
+    try {
+      const service = await server.getPrimaryService('battery_service');
+      const level = await service.getCharacteristic('battery_level');
+      level.addEventListener('characteristicvaluechanged', () => {
+        if (level.value) this.setBattery(level.value.getUint8(0));
+      });
+      this.setBattery((await level.readValue()).getUint8(0));
+      await level.startNotifications();
+    } catch {
+      // No battery readout; everything else works.
+    }
+  }
+
+  /** The firmware reports 0 until it has measured the battery (in active mode). */
+  private setBattery(percent: number): void {
+    this.battery = percent === 0 ? null : percent;
+    this.onBattery?.();
   }
 
   private handleValue = (event: Event): void => {

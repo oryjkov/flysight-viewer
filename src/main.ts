@@ -17,6 +17,7 @@ interface Session {
   client: CrsClient;
   deviceId: string;
   deviceName: string;
+  link: Link;
 }
 
 const ui = {
@@ -147,7 +148,12 @@ async function simulateFromFolder(files: FileList): Promise<void> {
   session?.client.disconnect();
   const folder = files[0].webkitRelativePath.split('/')[0] || 'folder';
   // ~1 ms per packet is in the same range as a real BLE link
-  const link = new FakeFlySight(fakeFsFromFiles(files), { name: `Simulated · ${folder}`, packetIntervalMs: 1 });
+  // A made-up battery level, so the readout shows in development too.
+  const link = new FakeFlySight(fakeFsFromFiles(files), {
+    name: `Simulated · ${folder}`,
+    packetIntervalMs: 1,
+    battery: 76,
+  });
   try {
     await startSession(link);
     void offerNewSessions();
@@ -165,7 +171,10 @@ async function startSession(link: Link): Promise<void> {
     client.disconnect();
     throw e;
   }
-  session = { client, deviceId: link.id, deviceName: link.name };
+  session = { client, deviceId: link.id, deviceName: link.name, link };
+  link.onBattery = () => {
+    if (session?.link === link) updateConnectionUi();
+  };
   client.onClose = (err) => {
     if (session?.client !== client) return;
     session = null;
@@ -180,6 +189,7 @@ async function startSession(link: Link): Promise<void> {
 function updateConnectionUi(): void {
   const connected = session !== null;
   setStatus(connected ? 'connected' : 'disconnected', connected ? session!.deviceName : 'Not connected');
+  if (connected) showBattery(session!.link.battery);
   ui.connect.hidden = connected;
   // A development aid for testing without a FlySight: `npm run dev` only.
   ui.simulate.hidden = connected || !import.meta.env.DEV;
@@ -191,6 +201,25 @@ function updateConnectionUi(): void {
 function setStatus(state: string, text: string): void {
   ui.status.dataset.state = state;
   ui.status.textContent = text;
+}
+
+/** Battery level after the device name, where the FlySight reports it. */
+function showBattery(percent: number | null | undefined): void {
+  if (percent === undefined) return;
+  const low = percent !== null && percent <= 20;
+  ui.status.append(
+    h(
+      'span',
+      {
+        class: low ? 'battery low' : 'battery',
+        title:
+          percent === null
+            ? 'The FlySight reports its battery level once it has measured it, while recording.'
+            : `Battery ${percent}% (from the battery voltage, 3.3–4.2 V)`,
+      },
+      percent === null ? 'battery –' : `${percent}%`,
+    ),
+  );
 }
 
 // ---------------------------------------------------------------- device browser

@@ -16,4 +16,11 @@ export interface Link {
   /** Called once when the connection drops. */
   onDisconnect: (() => void) | null;
   disconnect(): void;
+  /**
+   * Battery level, %, for devices that report one (FlySight develop
+   * firmware): null until the device has measured it, undefined when it
+   * can't report at all. `onBattery` fires when it changes.
+   */
+  readonly battery?: number | null;
+  onBattery?: (() => void) | null;
 }

@@ -71,6 +71,8 @@ export interface FakeOptions {
   /** Delay between outgoing packets, to mimic link throughput. */
   packetIntervalMs?: number;
   seed?: number;
+  /** Battery level to report, % (null: not measured yet); none by default, like release firmware. */
+  battery?: number | null;
 }
 
 interface ReadState {
@@ -87,6 +89,8 @@ export class FakeFlySight implements Link {
   readonly name: string;
   onPacket: ((data: Uint8Array) => void) | null = null;
   onDisconnect: (() => void) | null = null;
+  readonly battery: number | null | undefined;
+  onBattery: (() => void) | null = null;
 
   private read: ReadState | null = null;
   private inbox: Promise<void> = Promise.resolve();
@@ -110,6 +114,7 @@ export class FakeFlySight implements Link {
     this.ackTimeoutMs = options.ackTimeoutMs ?? 200;
     this.packetIntervalMs = options.packetIntervalMs ?? 0;
     this.random = mulberry32(options.seed ?? 1);
+    this.battery = options.battery;
   }
 
   write(data: Uint8Array): Promise<void> {
