@@ -180,6 +180,8 @@ canvas {
 }
 
 .readout {
+  display: flex;
+  gap: 14px;
   font-family: ui-monospace, monospace;
   font-size: 12px;
   min-height: 1.4em;

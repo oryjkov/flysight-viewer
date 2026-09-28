@@ -54,6 +54,9 @@ export class Chart {
   title = '';
   /** Always mark each sample with a dot, not only when zoomed in far. */
   dots = false;
+  /** Vertical cursor line, and values to show next to it. */
+  cursor: number | null = null;
+  cursorText: { text: string; color: string }[] = [];
   readonly pad = { l: 40, r: 40, t: 16, b: 18 };
 
   constructor(canvas: HTMLCanvasElement) {
@@ -168,11 +171,39 @@ export class Chart {
     }
     ctx.lineWidth = 1;
 
+    if (this.cursor !== null && this.cursor >= this.t0 && this.cursor <= this.t1) this.drawCursor(this.cursor, fg);
+
     if (this.title) {
       ctx.fillStyle = fg;
       ctx.textAlign = 'left';
       ctx.fillText(this.title, pad.l + 4, pad.t + 2);
     }
+  }
+
+  private drawCursor(t: number, fg: string): void {
+    const { ctx, pad } = this;
+    const x = Math.round(this.xOf(t)) + 0.5;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+    line(ctx, x, pad.t, x, pad.t + this.plotHeight);
+    if (!this.cursorText.length) return;
+    ctx.font = '11px ui-monospace, monospace';
+    const lh = 14;
+    const w = Math.max(...this.cursorText.map((l) => ctx.measureText(l.text).width)) + 8;
+    const h = this.cursorText.length * lh + 4;
+    // Beside the line, on whichever side has room.
+    const bx = x + 6 + w <= pad.l + this.plotWidth ? x + 6 : x - 6 - w;
+    const by = pad.t + 4;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.fillRect(bx, by, w, h);
+    ctx.strokeRect(Math.round(bx) + 0.5, by + 0.5, Math.round(w), h);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    this.cursorText.forEach((l, i) => {
+      ctx.fillStyle = l.color || fg;
+      ctx.fillText(l.text, bx + 4, by + 3 + i * lh);
+    });
+    ctx.font = '10px system-ui, sans-serif';
   }
 
   private drawAxis(axis: Axis, side: 'left' | 'right', grid: string | null, fg: string): void {

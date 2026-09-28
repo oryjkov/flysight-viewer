@@ -16,7 +16,7 @@ import {
 } from '../labels/schema';
 import { parseSensor, type SensorData } from '../track/sensor';
 import { derive, indexOfTime, isoTime, nearestIndex, parseTrack, type Derived, type Track } from '../track/track';
-import { Chart, fitAxis, type Series, type Span, type VLine } from './chart';
+import { Chart, fitAxis, lowerBound, type Series, type Span, type VLine } from './chart';
 import type { TrackInfo } from './devServer';
 
 const MARKER_COLOR: Record<MarkerName, string> = {
@@ -108,6 +108,8 @@ let activeJump = 0;
 let activeMarker: MarkerName = 'exit';
 let loadSeq = 0;
 let hoverT: number | null = null;
+/** Chart the pointer is over; it shows the values at the cursor. */
+let hoverChart: Chart | null = null;
 
 // ---------------------------------------------------------------- loading
 
@@ -520,7 +522,7 @@ function renderCharts(): void {
   detail.right = fitAxis([s.alt], detail.t0, detail.t1, 'm', false);
   detail.spans = spans;
   detail.lines = lines;
-  if (hoverT !== null) detail.lines = [...lines, { t: hoverT, color: 'rgba(0,0,0,0.25)' }];
+  setCursor(detail);
   detail.draw();
 }
 
@@ -561,24 +563,59 @@ function renderLoupes(): void {
     chart.rightRef = 1;
     chart.spans = spans;
     chart.lines = lines;
+    setCursor(chart);
     chart.draw();
   }
 }
 
-function renderReadout(): void {
-  if (!cur) return;
-  const { track, d } = cur;
-  const t = hoverT;
-  if (t === null) {
-    ui.readout.textContent = '';
-    return;
-  }
+/**
+ * Cursor line at the hovered time on every chart. A hovered loupe also shows
+ * the values next to it; the detail chart has the readout line below it.
+ */
+function setCursor(chart: Chart): void {
+  chart.cursor = hoverT;
+  const values = hoverT !== null && chart === hoverChart && chart !== detail && cur;
+  chart.cursorText = values ? cursorValues(hoverT!) : [];
+}
+
+function cursorValues(t: number): { text: string; color: string }[] {
+  const { track, d, sensor } = cur!;
   const i = nearestIndex(track, t);
   const f = (v: number) => v.toFixed(1).padStart(6);
-  ui.readout.textContent =
-    `${isoTime(track, i).slice(11, 23)}  alt ${track.alt[i].toFixed(0).padStart(5)} m` +
-    `  |v| ${f(d.speed[i])}  vD ${f(track.velD[i])}  vH ${f(d.velH[i])} m/s` +
-    `  drag ${d.drag[i].toFixed(2)} g  sAcc ${track.sAcc[i].toFixed(2)}`;
+  const out = [
+    { text: isoTime(track, i).slice(11, 23), color: '' },
+    { text: `alt ${track.alt[i].toFixed(0).padStart(6)} m`, color: COLORS.alt },
+    { text: `|v| ${f(d.speed[i])} m/s`, color: COLORS.speed },
+    { text: `vD  ${f(track.velD[i])} m/s`, color: COLORS.vD },
+    { text: `vH  ${f(d.velH[i])} m/s`, color: COLORS.vH },
+    { text: `drag ${d.drag[i].toFixed(2).padStart(5)} g`, color: COLORS.drag },
+  ];
+  if (sensor) {
+    const k = Math.min(sensor.t.length - 1, lowerBound(sensor.t, t));
+    const j = k > 0 && t - sensor.t[k - 1] < sensor.t[k] - t ? k - 1 : k;
+    if (Math.abs(sensor.t[j] - t) < 0.5) {
+      out.push({ text: `|a|  ${sensor.force[j].toFixed(2).padStart(5)} g`, color: COLORS.force });
+    }
+  }
+  return out;
+}
+
+function renderReadout(): void {
+  if (!cur) return;
+  if (hoverT === null) {
+    ui.readout.replaceChildren();
+    return;
+  }
+  const i = nearestIndex(cur.track, hoverT);
+  const parts = [...cursorValues(hoverT), { text: `sAcc ${cur.track.sAcc[i].toFixed(2)}`, color: '' }];
+  ui.readout.replaceChildren(
+    ...parts.map(({ text, color }) => {
+      const span = document.createElement('span');
+      span.textContent = text;
+      if (color) span.style.color = color;
+      return span;
+    }),
+  );
 }
 
 function selectJump(i: number): void {
@@ -632,6 +669,7 @@ function localX(e: PointerEvent | WheelEvent, chart: Chart): number {
   c.addEventListener('pointermove', (e) => {
     const x = localX(e, detail);
     hoverT = detail.tOf(x);
+    hoverChart = detail;
     if (drag?.kind === 'marker' && cur) setMarker(drag.m, nearestIndex(cur.track, hoverT));
     else if (drag?.kind === 'pan') {
       const dt = ((drag.x - x) / detail.plotWidth) * (drag.t1 - drag.t0);
@@ -639,17 +677,14 @@ function localX(e: PointerEvent | WheelEvent, chart: Chart): number {
     }
     c.style.cursor = drag?.kind === 'pan' ? 'grabbing' : grab(detail, x) ? 'col-resize' : 'grab';
     renderCharts();
+    renderLoupes();
     renderReadout();
   });
   c.addEventListener('pointerup', () => {
     drag = null;
     render();
   });
-  c.addEventListener('pointerleave', () => {
-    hoverT = null;
-    renderCharts();
-    renderReadout();
-  });
+  c.addEventListener('pointerleave', clearHover);
   c.addEventListener(
     'wheel',
     (e) => {
@@ -711,8 +746,16 @@ for (const [m, loupe] of loupes) {
     move(e);
   });
   c.addEventListener('pointermove', (e) => {
+    hoverT = loupe.chart.tOf(localX(e, loupe.chart));
+    hoverChart = loupe.chart;
     if (dragging) move(e);
+    else {
+      renderCharts();
+      renderLoupes();
+      renderReadout();
+    }
   });
+  c.addEventListener('pointerleave', clearHover);
   c.addEventListener('pointerup', () => {
     dragging = false;
     loupe.center = null;
@@ -720,6 +763,14 @@ for (const [m, loupe] of loupes) {
   });
   loupe.el.querySelector<HTMLInputElement>('.unsure')!.onchange = () => toggleUnsure(m);
   loupe.el.querySelector<HTMLInputElement>('.missing')!.onchange = () => toggleMissing(m);
+}
+
+function clearHover(): void {
+  hoverT = null;
+  hoverChart = null;
+  renderCharts();
+  renderLoupes();
+  renderReadout();
 }
 
 ui.filter.onchange = () => renderList();
