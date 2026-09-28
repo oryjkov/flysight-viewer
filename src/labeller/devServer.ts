@@ -7,11 +7,12 @@
  *   GET /api/file?path=…        raw file from the data folder
  *   GET /api/labels/<sha256>    label file, 404 if none
  *   PUT /api/labels/<sha256>    validate and write a label file
+ *   DELETE /api/labels/<sha256> remove a label file: back to not labelled
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join, relative, resolve, sep } from 'node:path';
 import { validateLabel, type LabelStatus, type TrackLabel } from '../labels/schema';
@@ -110,6 +111,10 @@ export function createLabellerApi(options: {
         res.setHeader('Content-Type', 'application/json');
         res.end(await readFile(file));
         return;
+      }
+      if (req.method === 'DELETE') {
+        await rm(file, { force: true });
+        return json(res, 200, {});
       }
       if (req.method === 'PUT') {
         const label = JSON.parse(await body(req)) as TrackLabel;

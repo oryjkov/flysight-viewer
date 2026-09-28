@@ -126,7 +126,8 @@ FlySight 2 `TRACK.CSV`, plus `SENSOR.CSV` when present) from `~/flysight`, or
 `$LABELLER_DATA`, and writes one label file per track to `labels/tracks/`.
 Markers start at the classifier's suggestion; how to place them is in
 [labels/RULES.md](labels/RULES.md). Moving to another track (`a`/`d` or the
-list) saves the current one as labelled.
+list) saves the current one as labelled; untick **Auto-save** to browse
+without saving, and save with **Save** or `Enter`.
 
 ## Layout
 

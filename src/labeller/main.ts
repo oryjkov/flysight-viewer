@@ -56,6 +56,8 @@ interface Loaded {
    */
   ghost: JumpLabel[];
   dirty: boolean;
+  /** Label just cleared: don't auto-save it again unless edited. */
+  cleared: boolean;
   /** Series shared by the charts. */
   s: Record<'speed' | 'vD' | 'vH' | 'alt' | 'drag', Series> & { force: Series | null };
 }
@@ -83,6 +85,9 @@ const ui = {
   noJump: $<HTMLButtonElement>('no-jump'),
   skip: $<HTMLButtonElement>('skip'),
   reset: $<HTMLButtonElement>('reset'),
+  save: $<HTMLButtonElement>('save'),
+  clear: $<HTMLButtonElement>('clear'),
+  autosave: $<HTMLInputElement>('autosave'),
   readout: $('readout'),
 };
 for (const p of PLATFORMS) ui.platform.add(new Option(p, p));
@@ -138,18 +143,7 @@ async function open(index: number): Promise<void> {
   const track = parseTrack(new Uint8Array(bytes));
   const d = derive(track);
   const suggested = segment(track);
-  const label: TrackLabel = labelRes.ok
-    ? await labelRes.json()
-    : {
-        schema: 1,
-        sha256: info.sha256,
-        source: info.path,
-        status: 'unreviewed',
-        jumps: clone(suggested),
-        flags: [],
-        note: '',
-        prefill: { classifier: CLASSIFIER_VERSION, jumps: suggested },
-      };
+  const label: TrackLabel = labelRes.ok ? await labelRes.json() : newLabel(info, suggested);
   cur = {
     info,
     track,
@@ -158,6 +152,7 @@ async function open(index: number): Promise<void> {
     label,
     ghost: suggested,
     dirty: false,
+    cleared: false,
     s: {
       speed: { t: track.t, v: d.speed, color: COLORS.speed, axis: 'left', width: 1.5 },
       vD: { t: track.t, v: track.velD, color: COLORS.vD, axis: 'left' },
@@ -182,10 +177,27 @@ async function open(index: number): Promise<void> {
   }
 }
 
-/** Save if needed; a track that was looked at counts as labelled. */
-async function save(loaded: Loaded): Promise<boolean> {
+/** Unsaved label pre-filled with the classifier's suggestion. */
+function newLabel(info: TrackInfo, suggested: JumpLabel[]): TrackLabel {
+  return {
+    schema: 1,
+    sha256: info.sha256,
+    source: info.path,
+    status: 'unreviewed',
+    jumps: clone(suggested),
+    flags: [],
+    note: '',
+    prefill: { classifier: CLASSIFIER_VERSION, jumps: clone(suggested) },
+  };
+}
+
+/**
+ * Save and mark labelled. Without `force`, only when there is something to
+ * record: changes, or a track not yet reviewed.
+ */
+async function save(loaded: Loaded, force = false): Promise<boolean> {
   const { label } = loaded;
-  if (!loaded.dirty && label.status !== 'unreviewed') return true;
+  if (!force && !loaded.dirty && (label.status !== 'unreviewed' || loaded.cleared)) return true;
   if (label.status === 'unreviewed') label.status = 'labelled';
   const res = await fetch(`/api/labels/${label.sha256}`, {
     method: 'PUT',
@@ -199,6 +211,7 @@ async function save(loaded: Loaded): Promise<boolean> {
   }
   loaded.label = await res.json();
   loaded.dirty = false;
+  loaded.cleared = false;
   loaded.info.status = loaded.label.status;
   loaded.info.jumps = loaded.label.jumps.length;
   return true;
@@ -206,7 +219,9 @@ async function save(loaded: Loaded): Promise<boolean> {
 
 async function go(index: number): Promise<void> {
   if (index < 0 || index >= tracks.length) return;
-  if (cur && !(await save(cur))) return;
+  if (cur && ui.autosave.checked) {
+    if (!(await save(cur))) return;
+  } else if (cur?.dirty && !confirm('Discard the unsaved changes to this track?')) return;
   ui.error.textContent = '';
   await open(index);
   renderList();
@@ -221,8 +236,20 @@ function step(delta: number): void {
   if (next) void go(tracks.indexOf(next));
 }
 
+async function saveNow(): Promise<void> {
+  if (!cur) return;
+  if (await save(cur, true)) ui.error.textContent = '';
+  render();
+  renderList();
+}
+
+// Browsing without auto-save: warn before losing edits on reload or close.
+addEventListener('beforeunload', (e) => {
+  if (cur?.dirty && !ui.autosave.checked) e.preventDefault();
+});
+
 addEventListener('pagehide', () => {
-  if (!cur?.dirty) return;
+  if (!cur?.dirty || !ui.autosave.checked) return;
   if (cur.label.status === 'unreviewed') cur.label.status = 'labelled';
   void fetch(`/api/labels/${cur.label.sha256}`, {
     method: 'PUT',
@@ -342,6 +369,27 @@ function toggleSkip(): void {
   if (!cur) return;
   cur.label.status = cur.label.status === 'skip' ? 'labelled' : 'skip';
   changed();
+}
+
+/** Delete the saved label: the track is not labelled again. */
+async function clearLabel(): Promise<void> {
+  if (!cur || !confirm('Clear the label of this track? It becomes not labelled.')) return;
+  const loaded = cur;
+  const res = await fetch(`/api/labels/${loaded.info.sha256}`, { method: 'DELETE' });
+  if (!res.ok) {
+    ui.error.textContent = 'Not cleared: the server refused';
+    return;
+  }
+  loaded.label = newLabel(loaded.info, loaded.ghost);
+  loaded.dirty = false;
+  loaded.cleared = true;
+  loaded.info.status = null;
+  loaded.info.jumps = null;
+  activeJump = 0;
+  ui.error.textContent = '';
+  fitView();
+  render();
+  renderList();
 }
 
 function resetToPrefill(): void {
@@ -783,6 +831,20 @@ ui.deleteJump.onclick = deleteJump;
 ui.noJump.onclick = setNoJump;
 ui.skip.onclick = toggleSkip;
 ui.reset.onclick = resetToPrefill;
+ui.save.onclick = () => void saveNow();
+ui.clear.onclick = () => void clearLabel();
+try {
+  ui.autosave.checked = localStorage.getItem('labeller.autosave') !== 'off';
+} catch {
+  // Storage unavailable: keep the default.
+}
+ui.autosave.onchange = () => {
+  try {
+    localStorage.setItem('labeller.autosave', ui.autosave.checked ? 'on' : 'off');
+  } catch {
+    // Not remembered; still applies to this visit.
+  }
+};
 ui.platform.onchange = () => {
   const j = jump();
   if (j) j.platform = ui.platform.value as JumpLabel['platform'];
@@ -817,10 +879,18 @@ addEventListener('keydown', (e) => {
     if (e.key === 'Escape') target.blur();
     return;
   }
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    void saveNow();
+    return;
+  }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const j = jump();
   const k = MARKERS.indexOf(activeMarker);
   switch (e.key) {
+    case 'Enter':
+      void saveNow();
+      break;
     case 'a':
       step(-1);
       break;

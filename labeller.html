@@ -15,6 +15,9 @@
           <option value="labelled">Labelled</option>
           <option value="skip">Skipped</option>
         </select>
+        <label title="Save the current track, marking it labelled, when moving to another one">
+          <input type="checkbox" id="autosave" checked /> Auto-save
+        </label>
         <span id="progress"></span>
       </div>
       <ul id="list"></ul>
@@ -25,7 +28,7 @@
         <div class="head-row">
           <strong id="path">Loading…</strong>
           <span id="status" class="badge"></span>
-          <span id="dirty" class="dirty" hidden title="Unsaved changes; saved when you move to another track">●</span>
+          <span id="dirty" class="dirty" hidden title="Unsaved changes">●</span>
           <span id="error" class="error"></span>
         </div>
         <div class="head-row">
@@ -45,6 +48,8 @@
           <input id="file-note" class="note" placeholder="File note" />
           <button id="no-jump" title="The file has no jump (x)">No jump</button>
           <button id="skip" title="Don't label this file (s)">Skip</button>
+          <button id="save" title="Save and mark labelled (Enter)">Save</button>
+          <button id="clear" title="Delete the saved label: the track becomes not labelled">Clear label</button>
           <button id="reset" title="Replace the jumps with the current classifier's suggestion (dashed lines)">
             Reset to classifier
           </button>
@@ -69,7 +74,7 @@
           <i style="--c: var(--force)"></i>sensor |a| (g) <i class="dashed"></i>classifier
         </span>
         <span>
-          <kbd>a</kbd>/<kbd>d</kbd> previous/next track (saves) · <kbd>Tab</kbd> or <kbd>1</kbd>–<kbd>4</kbd> marker ·
+          <kbd>a</kbd>/<kbd>d</kbd> previous/next track · <kbd>Enter</kbd> save · <kbd>Tab</kbd> or <kbd>1</kbd>–<kbd>4</kbd> marker ·
           <kbd>←</kbd><kbd>→</kbd> 1 sample, with <kbd>⇧</kbd> 1 s · <kbd>u</kbd> unsure · <kbd>n</kbd> not recorded ·
           <kbd>[</kbd><kbd>]</kbd> jump · <kbd>f</kbd> fit · <kbd>x</kbd> no jump · <kbd>s</kbd> skip · wheel zoom,
           drag pan
