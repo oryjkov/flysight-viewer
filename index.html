@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlySight Viewer</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>FlySight Viewer</h1>
+      <div class="connection">
+        <span id="status" class="status" data-state="disconnected">Not connected</span>
+        <button id="connect" class="primary">Connect FlySight</button>
+        <button id="simulate" title="Serve a copy of the SD card through the simulated BLE protocol">
+          Simulate from folder…
+        </button>
+        <button id="disconnect" hidden>Disconnect</button>
+        <input id="folder-input" type="file" webkitdirectory hidden />
+      </div>
+    </header>
+
+    <div id="notice" class="notice" hidden></div>
+
+    <main class="layout">
+      <div class="sidebar">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Device</h2>
+            <button id="refresh" class="icon" title="Refresh" hidden>↻</button>
+          </div>
+          <nav id="crumbs" class="crumbs"></nav>
+          <ul id="entries" class="entries">
+            <li class="empty">Connect a FlySight to browse its files.</li>
+          </ul>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Downloaded</h2>
+          </div>
+          <ul id="library" class="entries"></ul>
+        </section>
+      </div>
+
+      <section id="viewer" class="panel viewer">
+        <div class="placeholder">
+          <p>Pick a file on the left to download it and see a summary.</p>
+          <p class="hint">
+            First time with this FlySight? Double-press its button so the green LED pulses (pairing mode), then
+            click <b>Connect FlySight</b>. After pairing once it connects without that step.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
