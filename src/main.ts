@@ -107,7 +107,8 @@ function updateConnectionUi(): void {
   const connected = session !== null;
   setStatus(connected ? 'connected' : 'disconnected', connected ? session!.deviceName : 'Not connected');
   ui.connect.hidden = connected;
-  ui.simulate.hidden = connected;
+  // A development aid for testing without a FlySight: `npm run dev` only.
+  ui.simulate.hidden = connected || !import.meta.env.DEV;
   ui.disconnect.hidden = !connected;
   ui.refresh.hidden = !connected;
 }
@@ -724,11 +725,12 @@ if (!isWebBluetoothAvailable()) {
   showNotice(
     'Web Bluetooth is not available in this browser. Use Chrome or Edge (desktop or Android) on https or ' +
       'localhost; on Linux you may need chrome://flags/#enable-experimental-web-platform-features. ' +
-      'Downloaded files, "Open file" and "Simulate from folder" still work.',
+      'Downloaded files and "Open file" still work.',
     false,
     'notice.noBluetooth',
   );
 }
+updateConnectionUi();
 void refreshLibrary();
 // Ask the browser not to evict cached downloads under storage pressure;
 // Chrome grants this to installed apps.

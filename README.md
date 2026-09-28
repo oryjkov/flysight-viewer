@@ -80,10 +80,13 @@ FlySight 2: ~98 KB/s, a 1.6 MB `TRACK.CSV` in 16 s.
 
 ### Without a device
 
-**Simulate from folder…** serves a copy of the SD card (e.g. copied over USB)
-through a simulator of the firmware's BLE protocol, including its flow
-control. Useful for UI work. The tests also run end to end against a card
-copy at `~/flysight/fly2` (or `$FLYSIGHT_DATA`) when present.
+**Open file…** views a `TRACK.CSV` copied from the FlySight (e.g. over USB).
+
+For development, `npm run dev` also shows **Simulate from folder…**: it serves
+a copy of the SD card through a simulator of the firmware's BLE protocol,
+including its flow control, to work on the device browser without a FlySight.
+The deployed site doesn't show it. The tests also run end to end against a
+card copy at `~/flysight/fly2` (or `$FLYSIGHT_DATA`) when present.
 
 ## BLE protocol (CRS)
 
