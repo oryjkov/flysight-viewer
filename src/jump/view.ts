@@ -9,11 +9,12 @@ import { h } from '../ui/dom';
 import { analyzeJump, type Jump } from './analyze';
 import { niceMax, Plot, type PlotLine, type PlotMark, type PlotRef } from './plot';
 
-type UnitSystem = 'metric' | 'imperial';
+/** Speed unit; lengths are always metres. */
+type UnitSystem = 'kmh' | 'ms';
 
 const UNITS: Record<UnitSystem, { speed: number; speedUnit: string; length: number; lengthUnit: string }> = {
-  metric: { speed: 3.6, speedUnit: 'km/h', length: 1, lengthUnit: 'm' },
-  imperial: { speed: 2.2369363, speedUnit: 'mph', length: 3.2808399, lengthUnit: 'ft' },
+  kmh: { speed: 3.6, speedUnit: 'km/h', length: 1, lengthUnit: 'm' },
+  ms: { speed: 1, speedUnit: 'm/s', length: 1, lengthUnit: 'm' },
 };
 
 /**
@@ -55,7 +56,7 @@ export function jumpView(track: Track): HTMLElement {
 
   const head = h('div', { class: 'jump-head' });
   const tiles = h('div', { class: 'tiles' });
-  const unitsButton = h('button', { class: 'units', title: 'Switch units' });
+  const unitsButton = h('button', { class: 'units', title: 'Switch between km/h and m/s' });
   const tabs = h('div', { class: 'jump-tabs' });
 
   const profileCanvas = h('canvas', { class: 'plot plot-square' });
@@ -124,8 +125,8 @@ export function jumpView(track: Track): HTMLElement {
 
   const profile = new Plot(profileCanvas);
   profile.square = true;
+  // The polar fills its card; the glide-ratio lines don't need equal scales.
   const polar = new Plot(polarCanvas);
-  polar.square = true;
   const timePlot = new Plot(timeCanvas);
   timePlot.pad.r = 48;
 
@@ -284,7 +285,13 @@ export function jumpView(track: Track): HTMLElement {
     }
     const xMax = niceMax(maxVH, 10);
     polar.x = { min: 0, max: xMax, title: `Horizontal (${u.speedUnit})` };
-    polar.y = { min: -niceMax(-minVD, 10), max: niceMax(maxVD, 10), title: `Vertical (${u.speedUnit})`, invert: true };
+    // Above 0 only as far as the jumper actually climbed (flares, aircraft).
+    polar.y = {
+      min: minVD < -0.5 ? -niceMax(-minVD) : 0,
+      max: niceMax(maxVD, 10),
+      title: `Vertical (${u.speedUnit})`,
+      invert: true,
+    };
     polar.refs = [1, 2, 3].map((k) => ({ x0: 0, y0: 0, x1: xMax, y1: xMax / k, label: `${k}:1` }));
     polar.lines = [
       { x: vH, y: vD, to: dk, color: c.series1 },
@@ -423,7 +430,7 @@ export function jumpView(track: Track): HTMLElement {
   // ------------------------------------------------------------ controls
 
   unitsButton.onclick = () => {
-    state.units = state.units === 'metric' ? 'imperial' : 'metric';
+    state.units = state.units === 'kmh' ? 'ms' : 'kmh';
     saveUnits(state.units);
     render();
   };
@@ -494,9 +501,9 @@ function duration(s: number): string {
 
 function loadUnits(): UnitSystem {
   try {
-    return localStorage.getItem('jump.units') === 'imperial' ? 'imperial' : 'metric';
+    return localStorage.getItem('jump.units') === 'ms' ? 'ms' : 'kmh';
   } catch {
-    return 'metric';
+    return 'kmh';
   }
 }
 
