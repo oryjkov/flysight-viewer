@@ -21,6 +21,24 @@ In CI the build uses the base path `/flysight-viewer/` (see `vite.config.ts`);
 local builds use `/`. Pages is served over HTTPS, which Web Bluetooth
 requires. The Pages source is set to "GitHub Actions" in the repo settings.
 
+## Offline / install as an app
+
+The site is an installable PWA (`vite-plugin-pwa`, configured in
+`vite.config.ts`). A service worker precaches the page, so after one online
+visit it opens and works with no internet: Bluetooth talks to the FlySight
+directly and downloads are stored in IndexedDB. In Chrome on Android use
+"Install app" / "Add to Home screen". New deploys are picked up on the next
+online launch.
+
+- Chrome only: iOS browsers have no Web Bluetooth.
+- The page asks for persistent storage so cached downloads are not evicted
+  (Chrome grants it to installed apps), and holds a screen wake lock during a
+  download, because a phone suspends the page — and drops the connection —
+  when the screen turns off. Keep the app in the foreground while downloading.
+- All `oryjkov.github.io` project sites share one origin, so they share
+  storage and Bluetooth permissions. A custom domain would isolate the app;
+  moving to one means reinstalling and re-downloading.
+
 ## Running
 
 ```sh

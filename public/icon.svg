@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Full-bleed background so the icon also works as a maskable icon -->
+  <rect width="512" height="512" fill="#0b6bcb"/>
+  <!-- Flight path: climb, exit, descent, all inside the maskable safe zone -->
+  <path d="M112 352 C 176 344, 216 240, 280 168 S 352 176, 368 248 S 384 344, 400 352"
+        fill="none" stroke="#ffffff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="280" cy="168" r="22" fill="#ffffff"/>
+  <line x1="112" y1="392" x2="400" y2="392" stroke="#ffffff" stroke-opacity="0.55" stroke-width="12" stroke-linecap="round"/>
+</svg>

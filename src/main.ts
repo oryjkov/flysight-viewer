@@ -257,6 +257,7 @@ async function download(path: string, entry: Pick<DirEntry, 'size' | 'modified'>
 
   const progress = renderTransfer(path, entry.size, () => controller.abort());
   const started = performance.now();
+  const wakeLock = await acquireWakeLock();
   try {
     const data = await s.client.readFile(path, { signal: controller.signal, onProgress: progress });
     const seconds = (performance.now() - started) / 1000;
@@ -290,8 +291,21 @@ async function download(path: string, entry: Pick<DirEntry, 'size' | 'modified'>
       showMessage(path, `Download failed: ${errorMessage(e)}`, () => download(path, entry));
     }
   } finally {
+    wakeLock?.release().catch(() => {});
     transfer = null;
     renderEntries();
+  }
+}
+
+/**
+ * Keep the screen on during a download: on phones the page is suspended when
+ * the screen turns off, which drops the Bluetooth connection.
+ */
+async function acquireWakeLock(): Promise<WakeLockSentinel | null> {
+  try {
+    return (await navigator.wakeLock?.request('screen')) ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -517,3 +531,6 @@ if (!isWebBluetoothAvailable()) {
   );
 }
 void refreshLibrary();
+// Ask the browser not to evict cached downloads under storage pressure;
+// Chrome grants this to installed apps.
+void navigator.storage?.persist?.().catch(() => {});
