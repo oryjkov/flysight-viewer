@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <title>Jump labeller</title>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="side-head">
+        <select id="filter" title="Which tracks to list and step through">
+          <option value="all">All tracks</option>
+          <option value="todo">Not labelled</option>
+          <option value="labelled">Labelled</option>
+          <option value="skip">Skipped</option>
+        </select>
+        <span id="progress"></span>
+      </div>
+      <ul id="list"></ul>
+    </aside>
+
+    <main class="main">
+      <header class="head">
+        <div class="head-row">
+          <strong id="path">Loading…</strong>
+          <span id="status" class="badge"></span>
+          <span id="dirty" class="dirty" hidden title="Unsaved changes; saved when you move to another track">●</span>
+          <span id="error" class="error"></span>
+        </div>
+        <div class="head-row">
+          <span id="jump-tabs" class="tabs"></span>
+          <button id="add-jump" title="Add a jump in the visible range">+ Jump</button>
+          <span id="jump-fields" class="fields">
+            <label>Platform <select id="platform"></select></label>
+            <label>Discipline <select id="discipline"></select></label>
+            <label><input type="checkbox" id="jump-cutaway" /> cutaway</label>
+            <label><input type="checkbox" id="jump-bad-gps" /> bad GPS</label>
+            <input id="jump-note" class="note" placeholder="Jump note" />
+            <button id="delete-jump">Delete jump</button>
+          </span>
+        </div>
+        <div class="head-row">
+          <label><input type="checkbox" id="file-bad-gps" /> whole file bad GPS</label>
+          <input id="file-note" class="note" placeholder="File note" />
+          <button id="no-jump" title="The file has no jump (x)">No jump</button>
+          <button id="skip" title="Don't label this file (s)">Skip</button>
+          <button id="reset" title="Replace the jumps with the classifier's suggestion">Reset to prefill</button>
+        </div>
+      </header>
+
+      <canvas id="overview" class="overview"></canvas>
+      <canvas id="detail" class="detail"></canvas>
+      <div id="readout" class="readout"></div>
+
+      <div class="loupes">
+        <div class="loupe" data-marker="exit"></div>
+        <div class="loupe" data-marker="deploy"></div>
+        <div class="loupe" data-marker="open"></div>
+        <div class="loupe" data-marker="landing"></div>
+      </div>
+
+      <footer class="help">
+        <span class="legend">
+          <i style="--c: var(--speed)"></i>|v| <i style="--c: var(--vd)"></i>vD <i style="--c: var(--vh)"></i>vH
+          <i style="--c: var(--alt)"></i>altitude <i style="--c: var(--drag)"></i>drag (g)
+          <i style="--c: var(--force)"></i>sensor |a| (g) <i class="dashed"></i>classifier
+        </span>
+        <span>
+          <kbd>a</kbd>/<kbd>d</kbd> previous/next track (saves) · <kbd>Tab</kbd> or <kbd>1</kbd>–<kbd>4</kbd> marker ·
+          <kbd>←</kbd><kbd>→</kbd> 1 sample, with <kbd>⇧</kbd> 1 s · <kbd>u</kbd> unsure · <kbd>n</kbd> not recorded ·
+          <kbd>[</kbd><kbd>]</kbd> jump · <kbd>f</kbd> fit · <kbd>x</kbd> no jump · <kbd>s</kbd> skip · wheel zoom,
+          drag pan
+        </span>
+      </footer>
+    </main>
+    <script type="module" src="/src/labeller/main.ts"></script>
+  </body>
+</html>

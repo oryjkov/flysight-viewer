@@ -117,6 +117,17 @@ anything else. While reading or listing, the device ignores every command
 except CANCEL. It disconnects after 30 s without a write, so the client pings
 while idle. Names are FAT 8.3 (no long file names).
 
+## Jump labeller
+
+A dev-only page for marking exit, deploy, open and landing in tracks, the
+ground truth for jump segmentation. With `npm run dev` running, open
+http://localhost:5173/labeller.html. It reads tracks (FlySight 1 CSVs and
+FlySight 2 `TRACK.CSV`, plus `SENSOR.CSV` when present) from `~/flysight`, or
+`$LABELLER_DATA`, and writes one label file per track to `labels/tracks/`.
+Markers start at the classifier's suggestion; how to place them is in
+[labels/RULES.md](labels/RULES.md). Moving to another track (`a`/`d` or the
+list) saves the current one as labelled.
+
 ## Layout
 
 ```
@@ -124,6 +135,10 @@ src/ble/transport.ts   Web Bluetooth link
 src/ble/crs.ts         CRS protocol client
 src/ble/fakeDevice.ts  firmware simulator (tests, "Simulate from folder")
 src/parse/             FlySight CSV + UBX parsing, summaries
+src/track/             GNSS track and sensor loading, derived speeds
+src/classify/          jump segmentation
+src/labels/            label file schema
+src/labeller/          jump labeller page and its dev-server API
 src/storage.ts         IndexedDB cache
 src/main.ts            UI
 ```
