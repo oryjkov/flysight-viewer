@@ -943,8 +943,6 @@ new MutationObserver(() => {
     { passive: true },
   );
 }
-// With nothing open yet, a phone starts on the file list.
-if (compact.matches && ui.viewer.querySelector('.placeholder')) setDrawer(true);
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
